@@ -2,7 +2,13 @@
 Production STT Service with Whisper
 Includes error handling, caching, and performance optimization
 """
-import whisper
+try:
+    import whisper
+    WHISPER_AVAILABLE = True
+except ImportError:
+    WHISPER_AVAILABLE = False
+    whisper = None
+
 import numpy as np
 import soundfile as sf
 import io
@@ -32,6 +38,11 @@ class STTService:
     
     def _load_model(self):
         """Load Whisper model with error handling"""
+        if not WHISPER_AVAILABLE:
+            logger.error("Whisper module not available - STT service disabled")
+            self._model = None
+            return
+            
         try:
             logger.info(f"Loading Whisper model: {settings.WHISPER_MODEL}")
             self._model = whisper.load_model(
@@ -59,6 +70,18 @@ class STTService:
             dict with transcription results
         """
         start_time = time.time()
+        
+        # Check if Whisper is available
+        if not WHISPER_AVAILABLE or self._model is None:
+            error_msg = "Whisper STT service not available - module not installed"
+            logger.error(error_msg)
+            return {
+                "success": False,
+                "text": "",
+                "language": "",
+                "duration": time.time() - start_time,
+                "error": error_msg
+            }
         
         try:
             # Convert bytes to numpy array
@@ -154,4 +177,4 @@ class STTService:
     
     def health_check(self) -> bool:
         """Check if service is healthy"""
-        return self._model is not None
+        return WHISPER_AVAILABLE and self._model is not None
