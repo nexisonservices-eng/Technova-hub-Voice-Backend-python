@@ -1,40 +1,14 @@
 # Core Framework
 fastapi==0.108.0
 uvicorn[standard]==0.25.0
-websockets==12.0
 python-multipart==0.0.6
 pydantic==2.5.0
 pydantic-settings==2.1.0
 
-# AI Services (FREE alternatives)
-openai-whisper==20231117
-groq==0.4.1                    # FREE alternative to Mistral (faster)
-httpx==0.26.0
-edge-tts>=6.1.12               # FREE Microsoft TTS (Updated to fix 403 error)
-# pyttsx3==2.90                # Fallback option
-
-# Audio Processing
-pydub==0.25.1
-soundfile==0.12.1
-numpy==1.26.3
-scipy==1.11.4
-
-# Async & Concurrency
-aiofiles==23.2.1
-asyncio==3.4.3
+# AI model
+#torch==2.2.0      # lightweight CPU install
+#transformers==4.40.0
 
 # Utilities
 python-dotenv==1.0.0
 python-json-logger==2.0.7
-redis==5.0.1                   # For caching (optional)
-prometheus-client==0.19.0      # Metrics (optional)
-
-# Security
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-
-# Development
-pytest==7.4.3
-pytest-asyncio==0.21.1
-black==23.12.1
-flake8==7.0.0

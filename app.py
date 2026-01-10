@@ -88,6 +88,17 @@ async def root():
         "version": settings.APP_VERSION
     }
 
+
+# @app.get("/", response_model=HealthResponse)
+# async def root():
+#     health = pipeline.health_check()
+#     return {
+#         "status": "healthy" if all(health.values()) else "degraded",
+#         "timestamp": datetime.now(timezone.utc).isoformat(),  # convert to string
+#         "services": health,
+#         "version": settings.APP_VERSION
+#     }
+
 @app.get("/health")
 async def health_check():
     """Detailed health check"""

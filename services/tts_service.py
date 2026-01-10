@@ -1,7 +1,7 @@
 """
-Production TTS Service with FREE Microsoft Edge TTS + Fallback
+Production TTS Service with FREE Microsoft Edge TTS
 Edge TTS provides high-quality, natural voices for free
-Automatic fallback to pyttsx3 when Edge TTS is unavailable
+Fallback functionality has been disabled
 """
 import asyncio
 import edge_tts
@@ -15,7 +15,7 @@ from utils.exceptions import TTSException
 logger = setup_logger(__name__)
 
 class TTSService:
-    """Text-to-Speech using Microsoft Edge TTS (FREE) with automatic fallback"""
+    """Text-to-Speech using Microsoft Edge TTS (FREE) - Fallback disabled"""
     
     # Popular Edge TTS voices
     VOICES = {
@@ -36,13 +36,7 @@ class TTSService:
         self.edge_tts_failures = 0
         self.max_failures = 3
         
-        # Initialize fallback service
-        try:
-            self.fallback_service = TTSServiceOffline()
-            logger.info("✓ Fallback TTS service (pyttsx3) ready")
-        except Exception as e:
-            logger.warning(f"Could not initialize fallback TTS: {e}")
-        
+        # Fallback disabled
         logger.info(f"✓ TTS Service initialized (Edge TTS: {self.voice})")
     
     async def text_to_speech_bytes(
@@ -120,27 +114,7 @@ class TTSService:
                     logger.warning("🔄 Disabling Edge TTS due to repeated failures, switching to fallback")
                     self.use_edge_tts = False
         
-        # Use fallback service
-        if self.fallback_service:
-            try:
-                logger.info(f"Converting text to speech (Fallback/pyttsx3): {text[:50]}...")
-                
-                result = await self.fallback_service.text_to_speech_bytes(text)
-                
-                if result["success"]:
-                    duration = time.time() - start_time
-                    result["duration"] = duration
-                    result["provider"] = "pyttsx3"
-                    
-                    logger.info(f"✓ Fallback TTS completed in {duration:.2f}s ({len(result['audio_data'])} bytes)")
-                    return result
-                else:
-                    logger.error(f"Fallback TTS failed: {result.get('error', 'Unknown error')}")
-                    
-            except Exception as e:
-                logger.error(f"Fallback TTS error: {str(e)}")
-        
-        # All methods failed
+        # Edge TTS failed - return error
         return {
             "success": False,
             "error": f"TTS service unavailable. Edge TTS failures: {self.edge_tts_failures}",
@@ -239,10 +213,10 @@ class TTSService:
         """Check if service is healthy"""
         return {
             "edge_tts_available": self.use_edge_tts and self.edge_tts_failures < self.max_failures,
-            "fallback_available": self.fallback_service is not None,
+            "fallback_available": False,
             "edge_tts_failures": self.edge_tts_failures,
             "max_failures": self.max_failures,
-            "current_provider": "edge_tts" if self.use_edge_tts else "pyttsx3" if self.fallback_service else "none"
+            "current_provider": "edge_tts" if self.use_edge_tts else "none"
         }
     
     def reset_edge_tts(self):
@@ -250,42 +224,3 @@ class TTSService:
         self.edge_tts_failures = 0
         self.use_edge_tts = True
         logger.info("🔄 Edge TTS reset and re-enabled")
-
-
-# Fallback: pyttsx3 (offline, lower quality)
-class TTSServiceOffline:
-    """Offline TTS using pyttsx3 (fallback option)"""
-    
-    def __init__(self):
-        import pyttsx3
-        self.engine = pyttsx3.init()
-        self.engine.setProperty('rate', 150)
-        logger.info("✓ TTS Service initialized (pyttsx3 offline)")
-    
-    async def text_to_speech_bytes(self, text: str) -> dict:
-        """Convert text to speech (offline)"""
-        try:
-            import tempfile
-            import os
-            
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
-                tmp_path = tmp.name
-            
-            self.engine.save_to_file(text, tmp_path)
-            self.engine.runAndWait()
-            
-            with open(tmp_path, 'rb') as f:
-                audio_data = f.read()
-            
-            os.unlink(tmp_path)
-            
-            return {
-                "success": True,
-                "audio_data": audio_data,
-                "format": "wav"
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
