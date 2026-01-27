@@ -17,7 +17,8 @@ from core.connection_manager import manager
 from models.schemas import *
 from utils.logger import setup_logger
 from utils.exceptions import AIServiceException
-from routers import broadcast_tts
+from routers import broadcast_tts, inbound_calls
+from services.inbound_service import inbound_service
 
 logger = setup_logger(__name__)
 
@@ -36,14 +37,20 @@ async def lifespan(app: FastAPI):
     try:
         pipeline = AIPipeline()
         logger.info("✓ AI Pipeline initialized")
+        
+        # Initialize inbound service
+        await inbound_service.initialize()
+        logger.info("✓ Inbound Service initialized")
+        
     except Exception as e:
-        logger.error(f"✗ Failed to initialize pipeline: {str(e)}")
+        logger.error(f"✗ Failed to initialize services: {str(e)}")
         raise
     
     yield
     
     # Shutdown
     logger.info("Shutting down...")
+    await inbound_service.cleanup()
     await manager.close_all()
     logger.info("✓ Shutdown complete")
 
@@ -103,10 +110,14 @@ async def root():
 async def health_check():
     """Detailed health check"""
     health = pipeline.health_check()
+    inbound_health = await inbound_service.health_check()
     
     return {
-        "status": "healthy" if all(health.values()) else "degraded",
-        "services": health,
+        "status": "healthy" if all(health.values()) and all(inbound_health.values()) else "degraded",
+        "services": {
+            **health,
+            "inbound_service": inbound_health
+        },
         "connections": manager.get_connection_count(),
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
@@ -314,6 +325,7 @@ async def websocket_endpoint(websocket: WebSocket, call_id: str):
 
 # Register routers
 app.include_router(broadcast_tts.router)
+app.include_router(inbound_calls.router)
 
 if __name__ == "__main__":
     uvicorn.run(

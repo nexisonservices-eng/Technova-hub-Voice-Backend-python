@@ -24,6 +24,9 @@ class ConnectionManager:
         # Heartbeat tasks
         self.heartbeat_tasks: Dict[str, asyncio.Task] = {}
         
+        # Room-based connections for broadcasting
+        self.rooms: Dict[str, Set[str]] = {}
+        
         logger.info("✓ Connection Manager initialized")
     
     async def connect(self, websocket: WebSocket, call_id: str):
@@ -123,6 +126,52 @@ class ConnectionManager:
                 self.disconnect(call_id)
         
         logger.info("✓ All connections closed")
+    
+    # Room-based methods for inbound call management
+    async def join_room(self, call_id: str, room_name: str):
+        """Add connection to a room for broadcasting"""
+        if room_name not in self.rooms:
+            self.rooms[room_name] = set()
+        self.rooms[room_name].add(call_id)
+        logger.info(f"Connection {call_id} joined room: {room_name}")
+    
+    async def leave_room(self, call_id: str, room_name: str):
+        """Remove connection from a room"""
+        if room_name in self.rooms:
+            self.rooms[room_name].discard(call_id)
+            if not self.rooms[room_name]:
+                del self.rooms[room_name]
+        logger.info(f"Connection {call_id} left room: {room_name}")
+    
+    async def send_to_room(self, room_name: str, message: dict):
+        """Send message to all connections in a room"""
+        if room_name in self.rooms:
+            for call_id in self.rooms[room_name]:
+                await self.send_message(call_id, message)
+    
+    async def broadcast_queue_update(self, queue_data: dict):
+        """Broadcast queue updates to monitoring connections"""
+        await self.send_to_room("queue_monitor", {
+            "type": "queue_update",
+            "data": queue_data,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+    
+    async def broadcast_call_update(self, call_data: dict):
+        """Broadcast call updates to monitoring connections"""
+        await self.send_to_room("call_monitor", {
+            "type": "call_update", 
+            "data": call_data,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+    
+    def get_room_connections(self, room_name: str) -> Set[str]:
+        """Get all connections in a room"""
+        return self.rooms.get(room_name, set())
+    
+    def get_all_rooms(self) -> Dict[str, Set[str]]:
+        """Get all rooms and their connections"""
+        return self.rooms.copy()
 
 # Singleton instance
 manager = ConnectionManager()
