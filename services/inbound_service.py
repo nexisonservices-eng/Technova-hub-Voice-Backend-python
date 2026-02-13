@@ -15,8 +15,8 @@ class InboundService:
     """Service for managing inbound calls and integration with Node.js backend"""
     
     def __init__(self):
-        # self.node_backend_url = "https://technova-hub-voice-backend-node-hxg7.onrender.com"
-        self.node_backend_url = "http://localhost:5000"
+        self.node_backend_url = "https://technova-hub-voice-backend-node-hxg7.onrender.com"
+        # self.node_backend_url = "http://localhost:5000"
         self.session = None
         
     async def initialize(self):
