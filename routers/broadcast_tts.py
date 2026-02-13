@@ -43,7 +43,7 @@ class BroadcastTTSRequest(BaseModel):
     @validator('language')
     def validate_language(cls, v, values):
         if not validate_language(v):
-            raise ValueError('Language must be "ta-IN" or "en-GB"')
+            raise ValueError(get_voice_validation_error())
         
         # Validate language matches voice
         if 'voice' in values:

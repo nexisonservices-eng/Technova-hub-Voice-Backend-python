@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     
     # TTS Configuration
     TTS_PROVIDER: str = "edge"                  # edge (FREE) or pyttsx3
-    TTS_VOICE: str = "en-US-AriaNeural"         # Edge TTS voice
+    TTS_VOICE: str = "en-GB-SoniaNeural"         # Edge TTS voice
     TTS_RATE: str = "+0%"                       # Speech rate
     TTS_VOLUME: str = "+0%"                     # Volume
     

@@ -5,6 +5,30 @@ Single source of truth for all voice-related settings
 
 # Allowed voices - single source of truth
 ALLOWED_VOICES = {
+    "en-GB-SoniaNeural": {
+        "name": "English (GB) – Female",
+        "gender": "Female",
+        "locale": "en-GB",
+        "language": "en-GB"
+    },
+    "en-GB-RyanNeural": {
+        "name": "English (GB) – Male",
+        "gender": "Male",
+        "locale": "en-GB",
+        "language": "en-GB"
+    },
+    "en-GB-LibbyNeural": {
+        "name": "English (GB) – Female",
+        "gender": "Female",
+        "locale": "en-GB",
+        "language": "en-GB"
+    },
+    "en-GB-ThomasNeural": {
+        "name": "English (GB) – Male",
+        "gender": "Male",
+        "locale": "en-GB",
+        "language": "en-GB"
+    },
     "ta-IN-PallaviNeural": {
         "name": "Tamil – Female",
         "gender": "Female",
@@ -17,23 +41,23 @@ ALLOWED_VOICES = {
         "locale": "ta-IN",
         "language": "ta-IN"
     },
-    "en-GB-SoniaNeural": {
-        "name": "British English – Female",
+    "hi-IN-SwaraNeural": {
+        "name": "Hindi – Female",
         "gender": "Female",
-        "locale": "en-GB",
-        "language": "en-GB"
+        "locale": "hi-IN",
+        "language": "hi-IN"
     },
-    "en-GB-RyanNeural": {
-        "name": "British English – Male",
-        "gender": "Male", 
-        "locale": "en-GB",
-        "language": "en-GB"
+    "hi-IN-MadhurNeural": {
+        "name": "Hindi – Male",
+        "gender": "Male",
+        "locale": "hi-IN", 
+        "language": "hi-IN"
     }
 }
 
 # Default voice settings
-DEFAULT_VOICE = "ta-IN-PallaviNeural"  # Tamil – Female
-DEFAULT_LANGUAGE = "ta-IN"  # Tamil
+DEFAULT_VOICE = "en-GB-SoniaNeural"  # English (GB) – Female
+DEFAULT_LANGUAGE = "en-GB"  # English (GB)
 
 # Provider settings
 DEFAULT_PROVIDER = "edge"
@@ -46,7 +70,7 @@ def validate_voice(voice_id: str) -> bool:
 
 def validate_language(language: str) -> bool:
     """Check if language is allowed"""
-    return language in ["ta-IN", "en-GB"]
+    return language in ["en-GB", "ta-IN", "hi-IN"]
 
 def get_voice_info(voice_id: str) -> dict:
     """Get voice information by ID"""
