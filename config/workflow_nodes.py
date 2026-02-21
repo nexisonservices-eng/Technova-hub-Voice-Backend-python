@@ -22,6 +22,7 @@ class InputType(str, Enum):
 class NodeType(str, Enum):
     """Node types for workflow automation"""
     GREETING = "greeting"
+    AUDIO = "audio"  # Frontend-compatible version of greeting
     MENU = "menu"
     USER_INPUT = "input"
     SPEECH_INPUT = "speech_input"
@@ -94,77 +95,194 @@ class GreetingNodeData(NodeData):
     timeout: int = Field(default=10, ge=1, le=60)
     max_retries: int = Field(default=3, ge=1, le=10)
 
+class AudioNodeData(NodeData):
+    """Data structure for audio nodes (frontend-compatible version of greeting)"""
+    # Frontend field names
+    mode: str = Field(default="tts", pattern="^(tts|upload)$")
+    messageText: str = Field(default="Welcome to our service.")
+    voice: str = Field(default="en-GB-SoniaNeural")
+    language: str = Field(default="en-GB")
+    audioUrl: Optional[str] = None
+    audioAssetId: Optional[str] = None
+    afterPlayback: str = Field(default="next", pattern="^(next|wait)$")
+    timeoutSeconds: int = Field(default=10, ge=1, le=60)
+    maxRetries: int = Field(default=3, ge=1, le=10)
+    fallbackAudioNodeId: Optional[str] = None
+    promptKey: Optional[str] = None
+    
+    # Backend-mapped fields (for compatibility)
+    text: Optional[str] = None  # Mapped from messageText
+    timeout: Optional[int] = None  # Mapped from timeoutSeconds
+    max_retries: Optional[int] = None  # Mapped from maxRetries
+    audio_url: Optional[str] = None  # Mapped from audioUrl
+    audio_asset_id: Optional[str] = None  # Mapped from audioAssetId
+    
+    def model_post_init(self, __context: Any) -> None:
+        """Map frontend fields to backend fields after initialization"""
+        if self.text is None and self.messageText:
+            self.text = self.messageText
+        if self.timeout is None:
+            self.timeout = self.timeoutSeconds
+        if self.max_retries is None:
+            self.max_retries = self.maxRetries
+        if self.audio_url is None and self.audioUrl:
+            self.audio_url = self.audioUrl
+        if self.audio_asset_id is None and self.audioAssetId:
+            self.audio_asset_id = self.audioAssetId
+
 class UserInputNodeData(NodeData):
     """Data structure for user input nodes"""
-    text: str = Field(default="Please enter your selection.")
-    input_type: InputType = Field(default=InputType.DIGITS)
-    num_digits: int = Field(default=1, ge=1, le=20)
-    finish_on_key: str = Field(default="#", pattern="^(#|\\*|any|none)$")
-    speech_timeout: int = Field(default=5, ge=1, le=30)
-    speech_model: str = Field(default="default", pattern="^(default|phone_number|universal)$")
-    timeout: int = Field(default=10, ge=1, le=60)
-    max_retries: int = Field(default=3, ge=1, le=10)
-    invalid_input_message: str = Field(default="Invalid input. Please try again.")
-    validation: Optional[Dict[str, Any]] = None
+    digit: str = Field(default="1")
+    label: str = Field(default="")
+    action: str = Field(default="transfer", pattern="^(transfer|voicemail|menu|end)$")
+    destination: Optional[str] = None
+    promptAudioNodeId: Optional[str] = None
+    invalidAudioNodeId: Optional[str] = None
+    timeoutAudioNodeId: Optional[str] = None
+    maxAttempts: int = Field(default=3, ge=1, le=10)
+    timeoutSeconds: int = Field(default=10, ge=1, le=60)
+    
+    # Backend-mapped fields
+    timeout: Optional[int] = None
+    max_attempts: Optional[int] = None
+    prompt_audio_node_id: Optional[str] = None
+    invalid_audio_node_id: Optional[str] = None
+    timeout_audio_node_id: Optional[str] = None
+    
+    def model_post_init(self, __context: Any) -> None:
+        """Map frontend fields to backend fields"""
+        if self.timeout is None:
+            self.timeout = self.timeoutSeconds
+        if self.max_attempts is None:
+            self.max_attempts = self.maxAttempts
+        if self.prompt_audio_node_id is None and self.promptAudioNodeId:
+            self.prompt_audio_node_id = self.promptAudioNodeId
+        if self.invalid_audio_node_id is None and self.invalidAudioNodeId:
+            self.invalid_audio_node_id = self.invalidAudioNodeId
+        if self.timeout_audio_node_id is None and self.timeoutAudioNodeId:
+            self.timeout_audio_node_id = self.timeoutAudioNodeId
 
 class ConditionalNodeData(NodeData):
     """Data structure for conditional nodes"""
-    variable: str = Field(default="caller_input")
-    operator: OperatorType = Field(default=OperatorType.EQUALS)
-    value: str = Field(..., min_length=1, max_length=200)
-    custom_variable_name: Optional[str] = None
-    case_sensitive: bool = Field(default=False)
-    true_path_message: Optional[str] = None
-    false_path_message: Optional[str] = None
+    condition: str = Field(default="business_hours", pattern="^(business_hours|caller_id|custom)$")
+    variable: Optional[str] = None
+    operator: str = Field(default="equals", pattern="^(equals|not_equals|contains|greater_than|less_than|exists|regex)$")
+    value: Optional[str] = None
+    truePath: Optional[str] = None
+    falsePath: Optional[str] = None
+    
+    # Backend-mapped fields
+    true_path: Optional[str] = None
+    false_path: Optional[str] = None
+    
+    def model_post_init(self, __context: Any) -> None:
+        """Map frontend fields to backend fields"""
+        if self.true_path is None and self.truePath:
+            self.true_path = self.truePath
+        if self.false_path is None and self.falsePath:
+            self.false_path = self.falsePath
 
 class VoicemailNodeData(NodeData):
     """Data structure for voicemail nodes"""
     text: str = Field(default="Please leave your message after the beep.")
-    max_length: int = Field(default=60, ge=1, le=300)
+    maxLength: int = Field(default=60, ge=1, le=300)
     transcribe: bool = Field(default=True)
-    play_beep: bool = Field(default=True)
-    recording_url: Optional[str] = None
-    email_notifications: List[Dict[str, Any]] = Field(default_factory=list)
-    silence_timeout: int = Field(default=5, ge=1, le=30)
+    playBeep: bool = Field(default=True)
+    greetingAudioNodeId: Optional[str] = None
+    mailbox: str = Field(default="general")
+    storageRoute: Optional[str] = None
+    
+    # Backend-mapped fields
+    max_length: Optional[int] = None
+    greeting_audio_node_id: Optional[str] = None
+    
+    def model_post_init(self, __context: Any) -> None:
+        """Map frontend fields to backend fields"""
+        if self.max_length is None:
+            self.max_length = self.maxLength
+        if self.greeting_audio_node_id is None and self.greetingAudioNodeId:
+            self.greeting_audio_node_id = self.greetingAudioNodeId
 
 class TransferNodeData(NodeData):
     """Data structure for transfer nodes"""
     destination: str = Field(..., pattern=r"^\+?[1-9]\d{1,14}$")
-    announce_text: Optional[str] = None
+    label: Optional[str] = None
+    announceText: Optional[str] = None
     timeout: int = Field(default=30, ge=1, le=120)
-    caller_id: Optional[str] = None
-    record: bool = Field(default=False)
-    music_on_hold: str = Field(default="default", pattern="^(default|none|custom)$")
-    custom_music_url: Optional[str] = None
-    transfer_mode: TransferMode = Field(default=TransferMode.BLIND)
+    
+    # Backend-mapped fields
+    announce_text: Optional[str] = None
+    
+    def model_post_init(self, __context: Any) -> None:
+        """Map frontend fields to backend fields"""
+        if self.announce_text is None and self.announceText:
+            self.announce_text = self.announceText
 
 class RepeatNodeData(NodeData):
     """Data structure for repeat nodes"""
-    max_repeats: int = Field(default=3, ge=1, le=10)
-    repeat_message: Optional[str] = None
-    fallback_node_id: Optional[str] = None
-    fallback_message: Optional[str] = None
-    replay_last_prompt: bool = Field(default=True)
-    reset_on_repeat: bool = Field(default=False)
+    maxRepeats: int = Field(default=3, ge=1, le=10)
+    repeatMessage: Optional[str] = None
+    fallbackNodeId: Optional[str] = None
+    fallbackMessage: Optional[str] = None
+    replayLastPrompt: bool = Field(default=True)
+    resetOnRepeat: bool = Field(default=False)
 
 class EndNodeData(NodeData):
     """Data structure for end nodes"""
     text: Optional[str] = None
-    reason: str = Field(default="normal", pattern="^(normal|error|timeout|hangup)$")
-    log_data: bool = Field(default=True)
-    send_summary: bool = Field(default=False)
-    summary_email: Optional[str] = None
+    terminationType: str = Field(default="hangup", pattern="^(hangup|transfer|voicemail|callback)$")
+    transferNumber: Optional[str] = None
+    voicemailBox: Optional[str] = None
+    callbackDelay: int = Field(default=15, ge=1, le=60)
+    maxCallbackAttempts: int = Field(default=3, ge=1, le=10)
+    sendSurvey: bool = Field(default=False)
+    logCall: bool = Field(default=True)
+    sendReceipt: bool = Field(default=False)
+    contactMethod: str = Field(default="sms", pattern="^(sms|email|whatsapp)$")
+    
+    # Backend-mapped fields
+    reason: Optional[str] = None
+    transfer_number: Optional[str] = None
+    voicemail_box: Optional[str] = None
+    callback_delay: Optional[int] = None
+    max_callback_attempts: Optional[int] = None
+    send_survey: Optional[bool] = None
+    log_data: Optional[bool] = None
+    send_receipt: Optional[bool] = None
+    contact_method: Optional[str] = None
+    
+    def model_post_init(self, __context: Any) -> None:
+        """Map frontend fields to backend fields"""
+        if self.reason is None and self.terminationType:
+            self.reason = self.terminationType
+        if self.transfer_number is None and self.transferNumber:
+            self.transfer_number = self.transferNumber
+        if self.voicemail_box is None and self.voicemailBox:
+            self.voicemail_box = self.voicemailBox
+        if self.callback_delay is None:
+            self.callback_delay = self.callbackDelay
+        if self.max_callback_attempts is None:
+            self.max_callback_attempts = self.maxCallbackAttempts
+        if self.send_survey is None:
+            self.send_survey = self.sendSurvey
+        if self.log_data is None:
+            self.log_data = self.logCall
+        if self.send_receipt is None:
+            self.send_receipt = self.sendReceipt
+        if self.contact_method is None:
+            self.contact_method = self.contactMethod
 
 class AIAssistantNodeData(NodeData):
     """Data structure for AI assistant nodes"""
-    stream_url: str = Field(..., pattern=r"^https?://[^\s/$]+")
-    welcome_message: Optional[str] = None
-    max_duration: int = Field(default=300, ge=30, le=1800)
+    streamUrl: str = Field(..., pattern=r"^https?://[^\s/$]+")
+    welcomeMessage: Optional[str] = None
+    maxDuration: int = Field(default=300, ge=30, le=1800)
     language: str = Field(default="en-US", pattern="^[a-z]{2}-[A-Z]{2}$")
-    voice_profile: str = Field(default="professional", pattern="^(professional|friendly|casual)$")
-    context_data: Optional[Dict[str, Any]] = None
-    transfer_on_human_request: bool = Field(default=True)
-    human_transfer_destination: Optional[str] = None
+    voiceProfile: str = Field(default="professional", pattern="^(professional|friendly|casual)$")
+    contextData: Optional[Dict[str, Any]] = None
+    transferOnHumanRequest: bool = Field(default=True)
+    humanTransferDestination: Optional[str] = None
+
 
 class QueueNodeData(NodeData):
     """Data structure for queue nodes"""
@@ -227,6 +345,41 @@ NODE_CONFIGS = {
         }
     ),
     
+    NodeType.AUDIO: NodeConfig(
+        node_type=NodeType.AUDIO,
+        name="Audio Message",
+        category=NodeCategory.INTERACTION,
+        icon="🔊",
+        description="Play audio message (TTS or uploaded file)",
+        color="#4CAF50",
+        inputs=1,
+        outputs=["next", "timeout"],
+        data_schema={
+            "mode": {"type": "select", "options": ["tts", "upload"], "default": "tts"},
+            "messageText": {"type": "string", "required": True, "condition": {"mode": "tts"}},
+            "voice": {"type": "string", "default": "en-GB-SoniaNeural"},
+            "language": {"type": "string", "default": "en-GB"},
+            "audioUrl": {"type": "string", "default": None, "condition": {"mode": "upload"}},
+            "audioAssetId": {"type": "string", "default": None},
+            "afterPlayback": {"type": "select", "options": ["next", "wait"], "default": "next"},
+            "timeoutSeconds": {"type": "number", "default": 10, "min": 1, "max": 60},
+            "maxRetries": {"type": "number", "default": 3, "min": 1, "max": 10},
+            "fallbackAudioNodeId": {"type": "string", "default": None},
+            "promptKey": {"type": "string", "default": None},
+            # Backend-mapped fields
+            "text": {"type": "string", "default": None},
+            "timeout": {"type": "number", "default": 10},
+            "max_retries": {"type": "number", "default": 3},
+            "audio_url": {"type": "string", "default": None},
+            "audio_asset_id": {"type": "string", "default": None}
+        },
+        execution_config={
+            "auto_advance": False,
+            "blocking": True,
+            "collect_input": False
+        }
+    ),
+    
     NodeType.USER_INPUT: NodeConfig(
         node_type=NodeType.USER_INPUT,
         name="User Input",
@@ -237,11 +390,21 @@ NODE_CONFIGS = {
         inputs=1,
         outputs=["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "*", "#", "timeout", "no_match"],
         data_schema={
-            "text": {"type": "string", "required": True},
-            "input_type": {"type": "select", "options": [InputType.DIGITS.value, InputType.SPEECH.value, InputType.BOTH.value], "default": InputType.DIGITS.value},
-            "num_digits": {"type": "number", "default": 1, "min": 1, "max": 20},
-            "timeout": {"type": "number", "default": 10, "min": 1, "max": 60},
-            "max_retries": {"type": "number", "default": 3, "min": 1, "max": 10}
+            "digit": {"type": "string", "default": "1"},
+            "label": {"type": "string", "default": ""},
+            "action": {"type": "select", "options": ["transfer", "voicemail", "menu", "end"], "default": "transfer"},
+            "destination": {"type": "string", "default": None},
+            "promptAudioNodeId": {"type": "string", "default": None},
+            "invalidAudioNodeId": {"type": "string", "default": None},
+            "timeoutAudioNodeId": {"type": "string", "default": None},
+            "maxAttempts": {"type": "number", "default": 3, "min": 1, "max": 10},
+            "timeoutSeconds": {"type": "number", "default": 10, "min": 1, "max": 60},
+            # Backend-mapped fields
+            "timeout": {"type": "number", "default": 10},
+            "max_attempts": {"type": "number", "default": 3},
+            "prompt_audio_node_id": {"type": "string", "default": None},
+            "invalid_audio_node_id": {"type": "string", "default": None},
+            "timeout_audio_node_id": {"type": "string", "default": None}
         },
         execution_config={
             "auto_advance": False,
@@ -249,6 +412,7 @@ NODE_CONFIGS = {
             "collect_input": True
         }
     ),
+
     
     NodeType.CONDITIONAL: NodeConfig(
         node_type=NodeType.CONDITIONAL,
@@ -417,10 +581,41 @@ class WorkflowNodeHandler:
             "next_action": "wait_for_input"
         }
     
+    async def handle_audio(self, node_data: Dict[str, Any], 
+                          context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle audio node (frontend-compatible version of greeting)"""
+        # Map frontend fields to backend fields
+        text = node_data.get("messageText") or node_data.get("text", "Welcome to our service.")
+        mode = node_data.get("mode", "tts")
+        audio_url = node_data.get("audioUrl") or node_data.get("audio_url")
+        
+        # If upload mode and audio URL provided, use it directly
+        if mode == "upload" and audio_url:
+            return {
+                "success": True,
+                "action": "play_audio",
+                "audio_url": audio_url,
+                "next_action": "wait_for_input"
+            }
+        
+        # Otherwise, generate TTS
+        from core.pipeline import AIPipeline
+        pipeline = AIPipeline()
+        
+        audio_result = await pipeline.tts.text_to_speech_bytes(text=text)
+        
+        return {
+            "success": True,
+            "action": "play_prompt",
+            "prompt_audio": audio_result.get("audio_data"),
+            "next_action": "wait_for_input"
+        }
+    
     async def handle_menu(self, node_data: Dict[str, Any], 
                       context: Dict[str, Any]) -> Dict[str, Any]:
         """Handle menu node (similar to greeting)"""
         return await self.handle_greeting(node_data, context)
+
     
     async def handle_user_input(self, node_data: Dict[str, Any], 
                                context: Dict[str, Any]) -> Dict[str, Any]:
@@ -625,6 +820,7 @@ def validate_node_data(node_type: str, node_data: Dict[str, Any]) -> Dict[str, A
     try:
         data_models = {
             NodeType.GREETING.value: GreetingNodeData,
+            NodeType.AUDIO.value: AudioNodeData,
             NodeType.USER_INPUT.value: UserInputNodeData,
             NodeType.CONDITIONAL.value: ConditionalNodeData,
             NodeType.VOICEMAIL.value: VoicemailNodeData,
@@ -633,6 +829,7 @@ def validate_node_data(node_type: str, node_data: Dict[str, Any]) -> Dict[str, A
             NodeType.END.value: EndNodeData,
             NodeType.AI_ASSISTANT.value: AIAssistantNodeData
         }
+
         
         model_class = data_models.get(node_type)
         if model_class:

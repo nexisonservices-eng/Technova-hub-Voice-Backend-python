@@ -1,103 +1,96 @@
-﻿"""
+"""
 Inbound Call Service
 Integrates with Node.js backend for enhanced inbound call management
 """
 import asyncio
 import aiohttp
-import json
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timezone
+from typing import Dict, Any, Optional
 from utils.logger import setup_logger
+from config.settings import settings
 
 logger = setup_logger(__name__)
 
+
 class InboundService:
     """Service for managing inbound calls and integration with Node.js backend"""
-    
+
     def __init__(self):
-        self.node_backend_url = "https://technova-hub-voice-backend-node-hxg7.onrender.com"
-        # self.node_backend_url = "http://localhost:5000"
+        self.node_backend_url = settings.NODE_BACKEND_URL.rstrip('/')
         self.session = None
-        
+        self.timeout = aiohttp.ClientTimeout(total=settings.NODE_BACKEND_TIMEOUT)
+
+    def _build_headers(self) -> Dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if settings.NODE_BACKEND_INTERNAL_API_KEY:
+            headers["x-internal-api-key"] = settings.NODE_BACKEND_INTERNAL_API_KEY
+        return headers
+
     async def initialize(self):
         """Initialize HTTP session and connections"""
         self.session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=30),
-            headers={"Content-Type": "application/json"}
+            timeout=self.timeout,
+            headers=self._build_headers()
         )
-        logger.info("âœ“ Inbound Service initialized")
-    
+        logger.info("? Inbound Service initialized")
+
     async def cleanup(self):
         """Cleanup resources"""
         if self.session:
             await self.session.close()
-    
 
-    
+    async def _ensure_session(self):
+        if not self.session:
+            await self.initialize()
+
+    async def _get_json_with_fallback(self, paths, method="get", json_payload=None):
+        await self._ensure_session()
+        last_error = None
+
+        for path in paths:
+            url = f"{self.node_backend_url}{path}"
+            try:
+                request_method = getattr(self.session, method.lower())
+                async with request_method(url, json=json_payload) as response:
+                    if 200 <= response.status < 400:
+                        return await response.json()
+                    last_error = f"{url} -> {response.status}"
+            except Exception as exc:
+                last_error = f"{url} -> {exc}"
+
+        logger.error(f"All fallback endpoints failed: {last_error}")
+        return None
+
     async def get_queue_status(self) -> Dict[str, Any]:
-        """
-        Get current queue status from Node.js backend
-        
-        Returns:
-            Queue information and statistics
-        """
         try:
-            if not self.session:
-                await self.initialize()
-            
-            async with self.session.get(
-                f"{self.node_backend_url}/inbound/queues"
-            ) as response:
-                if 200 <= response.status < 400:
-                    queue_data = await response.json()
-                    return queue_data
-                else:
-                    logger.error(f"Failed to get queue status: {response.status}")
-                    return self._get_mock_queue_data()
-                    
+            data = await self._get_json_with_fallback([
+                "/inbound/queues",
+                "/api/inbound/queues",
+            ])
+            return data if data else self._get_mock_queue_data()
         except Exception as e:
             logger.error(f"Get queue status error: {str(e)}")
             return self._get_mock_queue_data()
-    
+
     def _get_mock_queue_data(self) -> Dict[str, Any]:
-        """Mock queue data for fallback"""
         return {
             "sales": {"length": 2, "avg_wait": 45},
             "tech": {"length": 1, "avg_wait": 30},
             "billing": {"length": 0, "avg_wait": 0},
             "priority": {"length": 1, "avg_wait": 15}
         }
-    
+
     async def get_analytics(self, period: str = "today") -> Dict[str, Any]:
-        """
-        Get call analytics from Node.js backend
-        
-        Args:
-            period: Time period for analytics
-            
-        Returns:
-            Analytics data
-        """
         try:
-            if not self.session:
-                await self.initialize()
-            
-            async with self.session.get(
-                f"{self.node_backend_url}/inbound/analytics?period={period}"
-            ) as response:
-                if 200 <= response.status < 400:
-                    analytics = await response.json()
-                    return analytics
-                else:
-                    logger.error(f"Failed to get analytics: {response.status}")
-                    return self._get_mock_analytics()
-                    
+            data = await self._get_json_with_fallback([
+                f"/api/analytics/inbound?period={period}",
+                f"/inbound/analytics?period={period}",
+            ])
+            return data if data else self._get_mock_analytics()
         except Exception as e:
             logger.error(f"Get analytics error: {str(e)}")
             return self._get_mock_analytics()
-    
+
     def _get_mock_analytics(self) -> Dict[str, Any]:
-        """Mock analytics data for fallback"""
         return {
             "summary": {
                 "totalCalls": 25,
@@ -118,114 +111,85 @@ class InboundService:
                 "avgResponseTime": 800
             }
         }
-    
+
     async def update_ivr_config(self, menu_name: str, config: Dict[str, Any]):
-        """
-        Update IVR configuration in Node.js backend
-        
-        Args:
-            menu_name: IVR menu name
-            config: IVR configuration
-        """
         try:
-            if not self.session:
-                await self.initialize()
-            
-            async with self.session.post(
-                f"{self.node_backend_url}/inbound/ivr/configs",
-                json={"menuName": menu_name, "config": config}
-            ) as response:
-                if 200 <= response.status < 400:
-                    logger.info(f"IVR config updated: {menu_name}")
-                    return await response.json()
-                else:
-                    logger.error(f"Failed to update IVR config: {response.status}")
-                    return {"success": False}
-                    
+            data = await self._get_json_with_fallback(
+                ["/inbound/ivr/configs", "/api/inbound/ivr/configs"],
+                method="post",
+                json_payload={"menuName": menu_name, "config": config}
+            )
+            return data if data else {"success": False}
         except Exception as e:
             logger.error(f"Update IVR config error: {str(e)}")
             return {"success": False}
-    
+
     async def test_ivr_menu(self, menu_name: str):
-        """
-        Test IVR menu configuration
-        
-        Args:
-            menu_name: IVR menu name to test
-        """
         try:
-            if not self.session:
-                await self.initialize()
-            
-            async with self.session.post(
-                f"{self.node_backend_url}/inbound/ivr/test/{menu_name}"
-            ) as response:
-                if 200 <= response.status < 400:
-                    logger.info(f"IVR test initiated: {menu_name}")
-                    return await response.json()
-                else:
-                    logger.error(f"Failed to test IVR: {response.status}")
-                    return {"success": False}
-                    
+            data = await self._get_json_with_fallback(
+                [f"/ivr/menus/{menu_name}/test", f"/api/ivr/menus/{menu_name}/test"],
+                method="post"
+            )
+            return data if data else {"success": False}
         except Exception as e:
             logger.error(f"Test IVR error: {str(e)}")
             return {"success": False}
-    
-    async def health_check(self) -> Dict[str, bool]:
-        """
-        Check health of Node.js backend integration
-        
-        Returns:
-            Health status of different components
-        """
+
+    async def health_check(self) -> Dict[str, Any]:
         health_status = {
             "nodejs_backend": False,
-            "api_connection": False
+            "api_connection": False,
+            "response_time_ms": 0,
+            "retries": 0
         }
-        
+
+        start_time = asyncio.get_event_loop().time()
+
         try:
-            if not self.session:
-                await self.initialize()
-            
-            # Test Node.js backend health
-            async with self.session.get(
-                f"{self.node_backend_url}/health/ping",
-                timeout=5
-            ) as response:
-                if 200 <= response.status < 400:
-                    health_status["nodejs_backend"] = True
-                    health_status["api_connection"] = True
-                    logger.info("âœ“ Node.js backend health check passed")
-                else:
-                    logger.warning(f"Node.js backend returned status: {response.status}")
-                    health_status["api_connection"] = True
-            
-        except asyncio.TimeoutError:
-            logger.error("Health check timeout - Node.js backend not responding")
+            await self._ensure_session()
+
+            candidate_paths = ["/health/ping", "/health", "/"]
+            timeout = aiohttp.ClientTimeout(total=settings.HEALTH_CHECK_TIMEOUT)
+
+            for attempt in range(settings.HEALTH_CHECK_MAX_RETRIES):
+                for path in candidate_paths:
+                    url = f"{self.node_backend_url}{path}"
+                    try:
+                        async with self.session.get(url, timeout=timeout) as response:
+                            elapsed = (asyncio.get_event_loop().time() - start_time) * 1000
+                            health_status["response_time_ms"] = round(elapsed, 2)
+                            health_status["api_connection"] = True
+
+                            if 200 <= response.status < 400:
+                                health_status["nodejs_backend"] = True
+                                health_status["retries"] = attempt
+                                return health_status
+                    except Exception:
+                        continue
+
+                if attempt < settings.HEALTH_CHECK_MAX_RETRIES - 1:
+                    wait_time = settings.HEALTH_CHECK_RETRY_DELAY * (settings.HEALTH_CHECK_RETRY_BACKOFF ** attempt)
+                    health_status["retries"] = attempt + 1
+                    await asyncio.sleep(wait_time)
+
         except Exception as e:
-            error_msg = str(e).lower()
-            if "connection refused" in error_msg:
-                logger.error("Node.js backend is not running - Connection refused")
-            elif "timeout" in error_msg:
-                logger.error("Health check timeout - Node.js backend not responding")
-            else:
-                logger.error(f"Health check error: {str(e)}")
-        
+            logger.error(f"? Health check error: {str(e)}")
+
+        elapsed = (asyncio.get_event_loop().time() - start_time) * 1000
+        health_status["response_time_ms"] = round(elapsed, 2)
         return health_status
 
-# Global instance
+
 inbound_service = InboundService()
 
-# Export functions for easy access
+
 async def get_queue_status() -> Dict[str, Any]:
-    """Get current queue status"""
     return await inbound_service.get_queue_status()
 
+
 async def get_analytics(period: str = "today") -> Dict[str, Any]:
-    """Get call analytics"""
     return await inbound_service.get_analytics(period)
 
-async def health_check() -> Dict[str, bool]:
-    """Check service health"""
-    return await inbound_service.health_check()
 
+async def health_check() -> Dict[str, bool]:
+    return await inbound_service.health_check()

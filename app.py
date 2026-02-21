@@ -53,60 +53,42 @@ pipeline = None
 
 
 @asynccontextmanager
-
 async def lifespan(app: FastAPI):
-
     """Startup and shutdown events"""
-
     global pipeline
-
     
-
     # Startup
-
     logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
-
     logger.info(f"Environment: {'Development' if settings.DEBUG else 'Production'}")
-
     
-
     try:
-
         pipeline = AIPipeline()
-
         logger.info("✓ AI Pipeline initialized")
-
         
-
         # Initialize inbound service
-
         await inbound_service.initialize()
-
         logger.info("✓ Inbound Service initialized")
-
         
-
+        # Verify Node.js backend connectivity on startup
+        logger.info("Verifying Node.js backend connectivity...")
+        health = await inbound_service.health_check()
+        if health["nodejs_backend"]:
+            logger.info(f"✓ Node.js backend connected ({health['response_time_ms']}ms)")
+        else:
+            logger.warning("⚠ Node.js backend not available - service will operate in degraded mode")
+        
     except Exception as e:
-
         logger.error(f"✗ Failed to initialize services: {str(e)}")
-
         raise
-
     
-
     yield
-
     
-
     # Shutdown
-
     logger.info("Shutting down...")
-
     await inbound_service.cleanup()
-
     await manager.close_all()
-
     logger.info("✓ Shutdown complete")
+
 
 
 
@@ -141,6 +123,26 @@ app.add_middleware(
 )
 
 
+
+
+@app.middleware("http")
+async def optional_api_key_guard(request, call_next):
+    if not settings.ENABLE_AUTH:
+        return await call_next(request)
+
+    public_paths = {"/", "/health", "/docs", "/openapi.json", "/redoc"}
+    if request.url.path in public_paths:
+        return await call_next(request)
+
+    configured_key = settings.PYTHON_API_KEY
+    if not configured_key:
+        return JSONResponse(status_code=500, content={"success": False, "error": "PYTHON_API_KEY is not configured"})
+
+    incoming_key = request.headers.get(settings.API_KEY_HEADER)
+    if incoming_key != configured_key:
+        return JSONResponse(status_code=401, content={"success": False, "error": "Unauthorized"})
+
+    return await call_next(request)
 
 # Error handler
 
@@ -671,3 +673,5 @@ if __name__ == "__main__":
         log_level=settings.LOG_LEVEL.lower()
 
     )
+
+
