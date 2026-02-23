@@ -2,7 +2,7 @@
 Centralized Configuration Management
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, AliasChoices
 from typing import Optional, List
 from pathlib import Path
 import json
@@ -55,7 +55,10 @@ class Settings(BaseSettings):
     LOG_FORMAT: str = "json"
     LOG_DIR: str = "logs"
 
-    CORS_ORIGINS_RAW: str = "*"
+    CORS_ORIGINS_RAW: str = Field(
+        default="*",
+        validation_alias=AliasChoices("CORS_ORIGINS_RAW", "CORS_ORIGINS")
+    )
     API_KEY_HEADER: str = "X-API-Key"
     ENABLE_AUTH: bool = False
     PYTHON_API_KEY: Optional[str] = None
@@ -95,6 +98,10 @@ class Settings(BaseSettings):
             if origins:
                 return origins
             return ["*"]
+
+    @property
+    def CORS_ALLOW_CREDENTIALS(self) -> bool:
+        return "*" not in self.CORS_ORIGINS
 
     model_config = SettingsConfigDict(
         env_file=".env",

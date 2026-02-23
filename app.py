@@ -114,7 +114,7 @@ app.add_middleware(
 
     allow_origins=settings.CORS_ORIGINS,
 
-    allow_credentials=True,
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
 
     allow_methods=["*"],
 
