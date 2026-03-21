@@ -12,3 +12,4 @@ edge-tts
 # Utilities
 python-dotenv
 python-json-logger
+httpx

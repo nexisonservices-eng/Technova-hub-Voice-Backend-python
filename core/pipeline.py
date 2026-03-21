@@ -25,7 +25,9 @@ class AIPipeline:
         self,
         audio_data: bytes,
         call_id: str,
-        language: str = "en"
+        language: str = "en",
+        company_id: str = None,
+        user_id: str = None
     ) -> Dict:
         """
         Complete pipeline: Audio → Text → AI → Speech
@@ -83,7 +85,7 @@ class AIPipeline:
             total_duration = time.time() - start_time
             
             logger.info(f"[{call_id}] ✓ Pipeline completed in {total_duration:.2f}s")
-            
+
             return {
                 "success": True,
                 "call_id": call_id,
@@ -138,7 +140,7 @@ class AIPipeline:
                 return self._error_response(call_id, "TTS failed", tts_result.get("error"))
             
             total_duration = time.time() - start_time
-            
+
             return {
                 "success": True,
                 "call_id": call_id,

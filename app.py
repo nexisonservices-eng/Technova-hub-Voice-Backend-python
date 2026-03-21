@@ -254,7 +254,7 @@ async def health_check():
 
 @app.post("/process-audio")
 
-async def process_audio(audio: UploadFile = File(...), language: str = "en"):
+async def process_audio(audio: UploadFile = File(...), language: str = "en", company_id: str = None, user_id: str = None):
 
     """
 
@@ -272,7 +272,7 @@ async def process_audio(audio: UploadFile = File(...), language: str = "en"):
 
         
 
-        result = await pipeline.process_audio(audio_data, call_id, language)
+        result = await pipeline.process_audio(audio_data, call_id, language, company_id, user_id)
 
         
 
