@@ -63,8 +63,10 @@ class Settings(BaseSettings):
     ENABLE_AUTH: bool = False
     PYTHON_API_KEY: Optional[str] = None
 
-    # NODE_BACKEND_URL: str = "http://localhost:5000"
-    NODE_BACKEND_URL: str = "https://technova-hub-voice-backend-node-hxg7.onrender.com"
+    NODE_BACKEND_URL: str = Field(
+        default="http://localhost:5000",
+        validation_alias=AliasChoices("NODE_BACKEND_URL")
+    )
     NODE_BACKEND_INTERNAL_API_KEY: Optional[str] = None
     NODE_BACKEND_TIMEOUT: int = 10
     NODE_BACKEND_MAX_RETRIES: int = 3

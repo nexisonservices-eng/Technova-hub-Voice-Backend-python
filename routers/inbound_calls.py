@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import asyncio
 import logging
 
+from config.settings import settings
 from services.inbound_service import inbound_service
 from utils.logger import setup_logger
 
@@ -220,7 +221,7 @@ async def websocket_queue_monitor(websocket: WebSocket):
         await websocket.send_json({
             "type": "info",
             "message": "Queue monitoring is handled by Node.js backend",
-            "nodejs_url": "https://technova-hub-voice-backend-node-hxg7.onrender.com/inbound/queues/monitor",
+            "nodejs_url": f"{settings.NODE_BACKEND_URL.rstrip('/')}/inbound/queues/monitor",
             # "nodejs_url": "http://localhost:5000/inbound/queues/monitor",
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
