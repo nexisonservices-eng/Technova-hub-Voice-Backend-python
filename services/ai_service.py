@@ -3,6 +3,7 @@ Production AI Service with FREE Groq API
 Groq is 10x faster than GPT-4 and completely FREE
 """
 import time
+import json
 from typing import List, Dict, Optional
 from groq import Groq
 from config.settings import settings
@@ -80,12 +81,67 @@ Avoid long paragraphs or technical jargon unless asked."""
                 "tokens_used": tokens_used,
                 "duration": duration
             }
-            
+
         except Exception as e:
             logger.error(f"AI Error: {str(e)}")
             return {
                 "success": False,
                 "response": "I'm having trouble processing that. Could you try again?",
+                "error": str(e),
+                "duration": time.time() - start_time
+            }
+
+    async def get_conversation_response(
+        self,
+        user_message: str,
+        call_id: str,
+        system_prompt: str,
+        conversation_state: Optional[dict] = None
+    ) -> dict:
+        """Generate a concise, structured turn for a live phone conversation."""
+        start_time = time.time()
+        try:
+            history = self.conversation_history.get(call_id, [])[-10:]
+            state_text = json.dumps(conversation_state or {}, ensure_ascii=False)
+            messages = [
+                {"role": "system", "content": system_prompt},
+                *history,
+                {"role": "user", "content": f"Conversation state: {state_text}\nCaller said: {user_message}"}
+            ]
+            result = self.client.chat.completions.create(
+                model=settings.AI_MODEL,
+                messages=messages,
+                temperature=settings.AI_TEMPERATURE,
+                max_tokens=settings.AI_MAX_TOKENS,
+                top_p=1,
+                stream=False,
+                response_format={"type": "json_object"}
+            )
+            parsed = json.loads(result.choices[0].message.content or "{}")
+            answer = str(parsed.get("response") or "I'm sorry, I didn't catch that. Could you say that another way?").strip()
+            intent = str(parsed.get("intent") or "clarify").strip().lower()
+            allowed_intents = {"continue", "offer_discounts", "discount_yes", "discount_no", "human_transfer", "end_call", "clarify"}
+            if intent not in allowed_intents:
+                intent = "clarify"
+            if intent == "offer_discounts" and not (conversation_state or {}).get("discountAsked"):
+                configured_question = str((conversation_state or {}).get("discountQuestion") or "").strip()
+                if configured_question:
+                    answer = configured_question
+
+            self._update_history(call_id, user_message, answer)
+            return {
+                "success": True,
+                "response": answer,
+                "intent": intent,
+                "duration": time.time() - start_time,
+                "tokens_used": getattr(getattr(result, "usage", None), "total_tokens", 0)
+            }
+        except Exception as e:
+            logger.error("Conversational AI turn failed", extra={"call_id": call_id, "error": str(e)})
+            return {
+                "success": False,
+                "response": "I'm sorry, I'm having trouble right now. Please try again or ask me to connect you to our team.",
+                "intent": "clarify",
                 "error": str(e),
                 "duration": time.time() - start_time
             }

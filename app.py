@@ -329,6 +329,33 @@ async def process_text(data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/conversation-turn")
+async def conversation_turn(data: dict):
+    """Return a knowledge-grounded text-and-intent turn for Twilio ConversationRelay."""
+    if pipeline is None or pipeline.ai is None:
+        raise HTTPException(status_code=503, detail="Conversational AI is not initialized")
+
+    text = str(data.get("text") or "").strip()
+    call_id = str(data.get("call_id") or "").strip()
+    system_prompt = str(data.get("system_prompt") or "").strip()
+    if not text or len(text) > 3000:
+        raise HTTPException(status_code=400, detail="Caller speech text is missing or too long")
+    if not call_id or len(call_id) > 100:
+        raise HTTPException(status_code=400, detail="A valid call_id is required")
+    if not system_prompt or len(system_prompt) > 65000:
+        raise HTTPException(status_code=400, detail="A valid system_prompt is required")
+
+    result = await pipeline.ai.get_conversation_response(
+        user_message=text,
+        call_id=call_id,
+        system_prompt=system_prompt,
+        conversation_state=data.get("conversation_state") or {}
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=503, detail="Conversational AI could not generate a response")
+    return result
+
+
 
 # @app.post("/test-stt")
 
