@@ -66,7 +66,7 @@ async def generate_broadcast_tts(request: BroadcastTTSRequest):
     - Direct TTS generation only
     """
     try:
-        logger.info(f"Generating TTS: {request.text[:50]}... (voice: {request.voice})")
+        logger.info("Generating TTS", extra={"language": request.language, "voice": request.voice, "provider": request.provider})
 
         if request.provider == "edge":
             audio_data = await generate_edge_tts(
@@ -81,7 +81,9 @@ async def generate_broadcast_tts(request: BroadcastTTSRequest):
                 detail=f"Unsupported TTS provider: {request.provider}"
             )
 
-        logger.info(f"TTS generated: {len(audio_data)} bytes")
+        logger.info("TTS generated", extra={"language": request.language, "voice": request.voice, "provider": request.provider, "audio_bytes": len(audio_data), "format": "mp3"})
+        if not audio_data:
+            raise HTTPException(status_code=502, detail="TTS provider returned empty audio")
 
         # Return raw audio bytes
         return Response(
@@ -93,8 +95,10 @@ async def generate_broadcast_tts(request: BroadcastTTSRequest):
             }
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"TTS generation failed: {str(e)}")
+        logger.error("TTS generation failed", extra={"language": request.language, "voice": request.voice, "provider": request.provider, "error": str(e)})
         raise HTTPException(status_code=500, detail=str(e))
 
 
