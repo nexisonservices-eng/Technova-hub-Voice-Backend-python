@@ -98,13 +98,21 @@ async def generate_broadcast_tts(request: BroadcastTTSRequest):
     - Direct TTS generation only
     """
     try:
-        logger.info("Generating TTS", extra={"language": request.language, "voice": request.voice, "provider": request.provider})
-        speech_text = await translate_for_tamil_tts(request.text, request.language)
+        # Tamil text must be spoken by a Tamil voice even when a client sends
+        # its default English voice/language settings.
+        contains_tamil = bool(_TAMIL_SCRIPT.search(request.text))
+        language = "ta-IN" if contains_tamil else request.language
+        voice = request.voice
+        if contains_tamil and not voice.startswith("ta-IN-"):
+            voice = "ta-IN-PallaviNeural"
+
+        logger.info("Generating TTS", extra={"language": language, "voice": voice, "provider": request.provider})
+        speech_text = await translate_for_tamil_tts(request.text, language)
 
         if request.provider == "edge":
             audio_data = await generate_edge_tts(
                 speech_text,
-                request.voice,
+                voice,
                 request.rate,
                 request.volume
             )
@@ -114,7 +122,7 @@ async def generate_broadcast_tts(request: BroadcastTTSRequest):
                 detail=f"Unsupported TTS provider: {request.provider}"
             )
 
-        logger.info("TTS generated", extra={"language": request.language, "voice": request.voice, "provider": request.provider, "audio_bytes": len(audio_data), "format": "mp3"})
+        logger.info("TTS generated", extra={"language": language, "voice": voice, "provider": request.provider, "audio_bytes": len(audio_data), "format": "mp3"})
         if not audio_data:
             raise HTTPException(status_code=502, detail="TTS provider returned empty audio")
 
