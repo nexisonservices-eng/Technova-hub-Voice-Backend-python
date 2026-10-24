@@ -6,7 +6,7 @@ pydantic
 pydantic-settings
 
 # AI Services (Cloud)
-groq
+groq==1.7.0
 edge-tts>=6.1.12
 googletrans==4.0.2
 

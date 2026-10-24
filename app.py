@@ -39,6 +39,7 @@ from utils.exceptions import AIServiceException
 from routers import broadcast_tts, inbound_calls
 
 from services.inbound_service import inbound_service
+from services.ai_service import resolve_groq_model_id
 
 
 
@@ -63,7 +64,7 @@ async def lifespan(app: FastAPI):
     logger.info(
         "AI runtime configuration",
         extra={
-            "ai_model": settings.AI_MODEL,
+            "ai_model": resolve_groq_model_id(settings.AI_MODEL),
             "groq_key_configured": bool(settings.GROQ_API_KEY),
             "api_auth_enabled": settings.ENABLE_AUTH,
             "python_api_key_configured": bool(settings.PYTHON_API_KEY),

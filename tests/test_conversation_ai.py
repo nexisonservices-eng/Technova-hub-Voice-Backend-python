@@ -36,6 +36,7 @@ spec = importlib.util.spec_from_file_location("conversation_ai_service_under_tes
 ai_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ai_module)
 AIService = ai_module.AIService
+resolve_groq_model_id = ai_module.resolve_groq_model_id
 
 
 class ConversationAITests(unittest.IsolatedAsyncioTestCase):
@@ -94,6 +95,47 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["intent"], "clarify")
         self.assertEqual(result["error_type"], "RuntimeError")
+
+    async def test_retired_groq_model_is_migrated_to_supported_model(self):
+        self.assertEqual(resolve_groq_model_id("llama-3.1-8b-instant"), "openai/gpt-oss-20b")
+        self.assertEqual(resolve_groq_model_id("openai/gpt-oss-20b"), "openai/gpt-oss-20b")
+        service = self.make_service('{"response":"Ready","intent":"continue"}')
+        service.model = resolve_groq_model_id("llama-3.1-8b-instant")
+        await service.get_conversation_response("Hello", "CA-test", "Reply briefly")
+        self.assertEqual(service.captured_kwargs["model"], "openai/gpt-oss-20b")
+
+    async def test_groq_404_metadata_is_safe_and_keeps_request_id(self):
+        class FakeNotFoundError(Exception):
+            status_code = 404
+            code = None
+            body = {"error": {"message": "model not found; do not echo caller text", "type": "invalid_request_error", "code": "model_not_found"}}
+            response = SimpleNamespace(headers={"x-request-id": "req-test-123"})
+
+        service = self.make_service(error=FakeNotFoundError("Authorization: Bearer secret-value"))
+        result = await service.get_conversation_response("What services?", "CA-test", "Use company knowledge")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_status"], 404)
+        self.assertEqual(result["error_code"], "model_not_found")
+        self.assertEqual(result["provider_type"], "invalid_request_error")
+        self.assertEqual(result["request_id"], "req-test-123")
+        self.assertNotIn("secret-value", result["error"])
+        self.assertNotIn("caller text", result["error"])
+
+    async def test_technovahub_english_expected_answer_is_returned_in_api_schema(self):
+        answer = "TechnovaHub provides IT Services, AI Automation, and Digital Transformation Solutions."
+        service = self.make_service('{"response":"' + answer + '","intent":"continue"}')
+        result = await service.get_conversation_response(
+            "What services does TechnovaHub provide?", "CA-services",
+            "Only answer from this company knowledge: TechnovaHub provides IT Services, AI Automation, and Digital Transformation Solutions."
+        )
+        self.assertEqual(result, {
+            "success": True,
+            "response": answer,
+            "intent": "continue",
+            "duration": result["duration"],
+            "tokens_used": 12,
+        })
+        self.assertIn("What services does TechnovaHub provide?", service.captured_messages[-1]["content"])
 
     async def test_live_turn_uses_async_groq_and_json_mode(self):
         service = self.make_service('{"response":"Vanakkam","intent":"continue"}')

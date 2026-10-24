@@ -1,6 +1,5 @@
 """
-Production AI Service with FREE Groq API
-Groq is 10x faster than GPT-4 and completely FREE
+Production AI Service using the Groq chat completions API
 """
 import time
 import json
@@ -12,12 +11,49 @@ from utils.exceptions import AIException
 
 logger = setup_logger(__name__)
 
+MODEL_MIGRATIONS = {
+    # Groq retired this model for standard production use on 2026-08-16.
+    # Keep old Render environment overrides from continuing to send 404s.
+    "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+}
+
+
+def resolve_groq_model_id(model_id: str) -> str:
+    configured = str(model_id or "").strip()
+    return MODEL_MIGRATIONS.get(configured, configured)
+
+
+def _provider_error_metadata(error):
+    """Extract safe provider diagnostics without logging request content or credentials."""
+    body = getattr(error, "body", None)
+    details = body.get("error", body) if isinstance(body, dict) else {}
+    details = details if isinstance(details, dict) else {}
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", {}) or {}
+    return {
+        "error_type": type(error).__name__,
+        "status": getattr(error, "status_code", None),
+        "code": str(details.get("code") or getattr(error, "code", "") or "")[:80] or None,
+        "provider_type": str(details.get("type") or "")[:80] or None,
+        "request_id": str(headers.get("x-request-id") or headers.get("request-id") or "")[:100] or None,
+    }
+
 class AIService:
-    """AI Service using Groq (FREE and FAST)"""
+    """AI Service using Groq chat completions."""
     
     def __init__(self):
         if not settings.GROQ_API_KEY:
             raise AIException("GROQ_API_KEY not configured")
+
+        configured_model = str(settings.AI_MODEL or "").strip()
+        self.model = resolve_groq_model_id(configured_model)
+        if self.model != configured_model:
+            warning = getattr(logger, "warning", logger.info)
+            warning("Retired Groq model configuration migrated", extra={
+                "configured_model": configured_model,
+                "active_model": self.model,
+                "stage": "model_migration",
+            })
         
         self.client = Groq(api_key=settings.GROQ_API_KEY)
         self.async_client = AsyncGroq(api_key=settings.GROQ_API_KEY, timeout=settings.AI_TIMEOUT)
@@ -57,7 +93,7 @@ Avoid long paragraphs or technical jargon unless asked."""
             
             # Call Groq API
             response = self.client.chat.completions.create(
-                model=settings.AI_MODEL,
+                model=self.active_model,
                 messages=messages,
                 temperature=settings.AI_TEMPERATURE,
                 max_tokens=settings.AI_MAX_TOKENS,
@@ -78,17 +114,25 @@ Avoid long paragraphs or technical jargon unless asked."""
             return {
                 "success": True,
                 "response": ai_response,
-                "model": settings.AI_MODEL,
+                "model": self.active_model,
                 "tokens_used": tokens_used,
                 "duration": duration
             }
 
         except Exception as e:
-            logger.error("AI request failed", extra={"call_id": call_id, "error_type": type(e).__name__})
+            provider = _provider_error_metadata(e)
+            logger.error("AI request failed", extra={
+                "call_id": call_id, "stage": "groq_response", **provider
+            })
             return {
                 "success": False,
                 "response": "I'm having trouble processing that. Could you try again?",
-                "error": str(e),
+                "error": f"Groq request failed ({provider['error_type']}, HTTP {provider['status'] or 'unknown'})",
+                "error_type": provider["error_type"],
+                "error_status": provider["status"],
+                "error_code": provider["code"],
+                "provider_type": provider["provider_type"],
+                "request_id": provider["request_id"],
                 "duration": time.time() - start_time
             }
 
@@ -110,7 +154,7 @@ Avoid long paragraphs or technical jargon unless asked."""
                 {"role": "user", "content": f"Conversation state: {state_text}\nCaller said: {user_message}"}
             ]
             result = await self.async_client.chat.completions.create(
-                model=settings.AI_MODEL,
+                model=self.active_model,
                 messages=messages,
                 temperature=settings.AI_TEMPERATURE,
                 # GPT-OSS spends part of its completion budget on reasoning.
@@ -144,20 +188,25 @@ Avoid long paragraphs or technical jargon unless asked."""
                 "tokens_used": getattr(getattr(result, "usage", None), "total_tokens", 0)
             }
         except Exception as e:
-            logger.error(
-                "Conversational AI turn failed",
-                extra={"call_id": call_id, "error_type": type(e).__name__,
-                       "provider_status": getattr(e, "status_code", None),
-                       "provider_code": str(getattr(e, "code", "") or "")[:60] or None},
-            )
+            provider = _provider_error_metadata(e)
+            logger.error("Conversational AI turn failed", extra={
+                "call_id": call_id, "stage": "groq_response",
+                "provider_status": provider["status"],
+                "provider_code": provider["code"],
+                "provider_type": provider["provider_type"],
+                "request_id": provider["request_id"],
+                "error_type": provider["error_type"],
+            })
             return {
                 "success": False,
                 "response": "I'm sorry, I'm having trouble right now. Please try again or ask me to connect you to our team.",
                 "intent": "clarify",
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "error_status": getattr(e, "status_code", None),
-                "error_code": str(getattr(e, "code", "") or "")[:60] or None,
+                "error": f"Groq request failed ({provider['error_type']}, HTTP {provider['status'] or 'unknown'})",
+                "error_type": provider["error_type"],
+                "error_status": provider["status"],
+                "error_code": provider["code"],
+                "provider_type": provider["provider_type"],
+                "request_id": provider["request_id"],
                 "duration": time.time() - start_time
             }
     
@@ -200,7 +249,7 @@ Avoid long paragraphs or technical jargon unless asked."""
             messages = self._build_messages(user_message, call_id)
             
             stream = self.client.chat.completions.create(
-                model=settings.AI_MODEL,
+                model=self.active_model,
                 messages=messages,
                 temperature=settings.AI_TEMPERATURE,
                 max_tokens=settings.AI_MAX_TOKENS,
@@ -244,10 +293,14 @@ Avoid long paragraphs or technical jargon unless asked."""
         try:
             # Simple test call
             response = self.client.chat.completions.create(
-                model=settings.AI_MODEL,
+                model=self.active_model,
                 messages=[{"role": "user", "content": "test"}],
                 max_tokens=5
             )
             return True
         except:
             return False
+
+    @property
+    def active_model(self) -> str:
+        return getattr(self, "model", None) or resolve_groq_model_id(settings.AI_MODEL)
