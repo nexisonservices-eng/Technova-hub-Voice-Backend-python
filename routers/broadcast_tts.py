@@ -9,6 +9,8 @@ from typing import Optional
 import edge_tts
 import asyncio
 import logging
+import re
+from googletrans import Translator
 from config.voice_config import (
     ALLOWED_VOICES, 
     DEFAULT_VOICE, 
@@ -22,6 +24,36 @@ from config.voice_config import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tts", tags=["broadcast"])
+_translation_cache = {}
+_TAMIL_SCRIPT = re.compile(r"[\u0B80-\u0BFF]")
+
+
+async def translate_for_tamil_tts(text: str, language: str) -> str:
+    """Translate non-Tamil prompts before Tamil TTS; pass Tamil text through."""
+    if language != "ta-IN" or not text.strip() or _TAMIL_SCRIPT.search(text):
+        return text
+
+    cached = _translation_cache.get(text)
+    if cached:
+        return cached
+
+    try:
+        async with Translator(service_urls=["translate.googleapis.com"]) as translator:
+            result = await translator.translate(text, src="en", dest="ta")
+        translated = str(result.text).strip()
+        if not translated:
+            raise ValueError("Translation returned empty text")
+
+        if len(_translation_cache) >= 500:
+            _translation_cache.pop(next(iter(_translation_cache)))
+        _translation_cache[text] = translated
+        return translated
+    except Exception as exc:
+        logger.exception("Tamil translation failed")
+        raise HTTPException(
+            status_code=502,
+            detail="Tamil translation failed; no audio was generated. Please retry."
+        ) from exc
 
 
 class BroadcastTTSRequest(BaseModel):
@@ -67,10 +99,11 @@ async def generate_broadcast_tts(request: BroadcastTTSRequest):
     """
     try:
         logger.info("Generating TTS", extra={"language": request.language, "voice": request.voice, "provider": request.provider})
+        speech_text = await translate_for_tamil_tts(request.text, request.language)
 
         if request.provider == "edge":
             audio_data = await generate_edge_tts(
-                request.text,
+                speech_text,
                 request.voice,
                 request.rate,
                 request.volume
