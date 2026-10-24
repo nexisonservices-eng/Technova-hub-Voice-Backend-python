@@ -8,6 +8,7 @@ pydantic-settings
 # AI Services (Cloud)
 groq
 edge-tts>=6.1.12
+googletrans==4.0.2
 
 # Utilities
 python-dotenv
