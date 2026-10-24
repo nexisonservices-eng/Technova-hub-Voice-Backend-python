@@ -5,7 +5,7 @@ Groq is 10x faster than GPT-4 and completely FREE
 import time
 import json
 from typing import List, Dict, Optional
-from groq import Groq
+from groq import AsyncGroq, Groq
 from config.settings import settings
 from utils.logger import setup_logger
 from utils.exceptions import AIException
@@ -20,6 +20,7 @@ class AIService:
             raise AIException("GROQ_API_KEY not configured")
         
         self.client = Groq(api_key=settings.GROQ_API_KEY)
+        self.async_client = AsyncGroq(api_key=settings.GROQ_API_KEY, timeout=settings.AI_TIMEOUT)
         self.conversation_history: Dict[str, List[dict]] = {}
         
         self.system_prompt = """You are a helpful voice assistant. 
@@ -52,7 +53,7 @@ Avoid long paragraphs or technical jargon unless asked."""
             # Build message history
             messages = self._build_messages(user_message, call_id)
             
-            logger.info(f"[{call_id}] Getting AI response for: {user_message}")
+            logger.info("Generating AI response", extra={"call_id": call_id, "input_chars": len(user_message)})
             
             # Call Groq API
             response = self.client.chat.completions.create(
@@ -72,7 +73,7 @@ Avoid long paragraphs or technical jargon unless asked."""
             duration = time.time() - start_time
             tokens_used = response.usage.total_tokens if hasattr(response, 'usage') else 0
             
-            logger.info(f"✓ AI responded in {duration:.2f}s: {ai_response[:50]}...")
+            logger.info("AI response generated", extra={"call_id": call_id, "response_chars": len(ai_response), "duration_seconds": round(duration, 3)})
             
             return {
                 "success": True,
@@ -83,7 +84,7 @@ Avoid long paragraphs or technical jargon unless asked."""
             }
 
         except Exception as e:
-            logger.error(f"AI Error: {str(e)}")
+            logger.error("AI request failed", extra={"call_id": call_id, "error_type": type(e).__name__})
             return {
                 "success": False,
                 "response": "I'm having trouble processing that. Could you try again?",
@@ -108,13 +109,14 @@ Avoid long paragraphs or technical jargon unless asked."""
                 *history,
                 {"role": "user", "content": f"Conversation state: {state_text}\nCaller said: {user_message}"}
             ]
-            result = self.client.chat.completions.create(
+            result = await self.async_client.chat.completions.create(
                 model=settings.AI_MODEL,
                 messages=messages,
                 temperature=settings.AI_TEMPERATURE,
                 max_tokens=settings.AI_MAX_TOKENS,
                 top_p=1,
                 stream=False,
+                reasoning_effort="low",
                 response_format={"type": "json_object"}
             )
             parsed = json.loads(result.choices[0].message.content or "{}")
@@ -137,12 +139,20 @@ Avoid long paragraphs or technical jargon unless asked."""
                 "tokens_used": getattr(getattr(result, "usage", None), "total_tokens", 0)
             }
         except Exception as e:
-            logger.error("Conversational AI turn failed", extra={"call_id": call_id, "error": str(e)})
+            logger.error(
+                "Conversational AI turn failed",
+                extra={"call_id": call_id, "error_type": type(e).__name__,
+                       "provider_status": getattr(e, "status_code", None),
+                       "provider_code": str(getattr(e, "code", "") or "")[:60] or None},
+            )
             return {
                 "success": False,
                 "response": "I'm sorry, I'm having trouble right now. Please try again or ask me to connect you to our team.",
                 "intent": "clarify",
                 "error": str(e),
+                "error_type": type(e).__name__,
+                "error_status": getattr(e, "status_code", None),
+                "error_code": str(getattr(e, "code", "") or "")[:60] or None,
                 "duration": time.time() - start_time
             }
     

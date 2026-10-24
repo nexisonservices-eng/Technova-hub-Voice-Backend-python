@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 
 
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File, Request
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -60,6 +60,15 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info(f"Environment: {'Development' if settings.DEBUG else 'Production'}")
+    logger.info(
+        "AI runtime configuration",
+        extra={
+            "ai_model": settings.AI_MODEL,
+            "groq_key_configured": bool(settings.GROQ_API_KEY),
+            "api_auth_enabled": settings.ENABLE_AUTH,
+            "python_api_key_configured": bool(settings.PYTHON_API_KEY),
+        },
+    )
     
     try:
         pipeline = AIPipeline()
@@ -136,10 +145,19 @@ async def optional_api_key_guard(request, call_next):
 
     configured_key = settings.PYTHON_API_KEY
     if not configured_key:
+        logger.error(
+            "Python API authentication is enabled without a configured key",
+            extra={"path": request.url.path, "stage": "python_auth_configuration"},
+        )
         return JSONResponse(status_code=500, content={"success": False, "error": "PYTHON_API_KEY is not configured"})
 
     incoming_key = request.headers.get(settings.API_KEY_HEADER)
     if incoming_key != configured_key:
+        logger.warning(
+            "Python API request rejected by API key guard",
+            extra={"path": request.url.path, "method": request.method,
+                   "correlation_id": request.headers.get("X-Correlation-ID", ""), "stage": "python_auth"},
+        )
         return JSONResponse(status_code=401, content={"success": False, "error": "Unauthorized"})
 
     return await call_next(request)
@@ -330,7 +348,7 @@ async def process_text(data: dict):
 
 
 @app.post("/conversation-turn")
-async def conversation_turn(data: dict):
+async def conversation_turn(data: dict, request: Request):
     """Return a knowledge-grounded text-and-intent turn for Twilio ConversationRelay."""
     if pipeline is None or pipeline.ai is None:
         raise HTTPException(status_code=503, detail="Conversational AI is not initialized")
@@ -345,6 +363,11 @@ async def conversation_turn(data: dict):
     if not system_prompt or len(system_prompt) > 65000:
         raise HTTPException(status_code=400, detail="A valid system_prompt is required")
 
+    correlation_id = request.headers.get("X-Correlation-ID") or call_id
+    logger.info(
+        "Conversation AI turn received",
+        extra={"correlation_id": correlation_id, "call_id": call_id, "input_chars": len(text), "stage": "python_received"},
+    )
     result = await pipeline.ai.get_conversation_response(
         user_message=text,
         call_id=call_id,
@@ -352,7 +375,20 @@ async def conversation_turn(data: dict):
         conversation_state=data.get("conversation_state") or {}
     )
     if not result.get("success"):
+        logger.error(
+            "Conversation AI turn failed",
+            extra={"correlation_id": correlation_id, "call_id": call_id,
+                   "error_type": result.get("error_type", "AIProviderError"),
+                   "provider_status": result.get("error_status"),
+                   "provider_code": result.get("error_code"), "stage": "groq_response"},
+        )
         raise HTTPException(status_code=503, detail="Conversational AI could not generate a response")
+    logger.info(
+        "Conversation AI response ready",
+        extra={"correlation_id": correlation_id, "call_id": call_id,
+               "response_chars": len(str(result.get("response") or "")),
+               "intent": result.get("intent"), "stage": "python_response"},
+    )
     return result
 
 

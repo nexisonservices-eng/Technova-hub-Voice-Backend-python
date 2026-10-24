@@ -10,6 +10,7 @@ from pathlib import Path
 # require loading the STT/TTS services or making a Groq API connection.
 groq_module = types.ModuleType("groq")
 groq_module.Groq = object
+groq_module.AsyncGroq = object
 sys.modules.setdefault("groq", groq_module)
 
 config_package = types.ModuleType("config")
@@ -44,6 +45,7 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
         def create(**kwargs):
             if error:
                 raise error
+            service.captured_kwargs = kwargs
             service.captured_messages = kwargs["messages"]
             return SimpleNamespace(
                 choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
@@ -52,6 +54,12 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
 
         service.client = SimpleNamespace(
             chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+        )
+        async def create_async(**kwargs):
+            return create(**kwargs)
+
+        service.async_client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create_async))
         )
         service.conversation_history = {}
         return service
@@ -85,6 +93,16 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
         result = await service.get_conversation_response("Hello", "CA-test", "Reply in English")
         self.assertFalse(result["success"])
         self.assertEqual(result["intent"], "clarify")
+        self.assertEqual(result["error_type"], "RuntimeError")
+
+    async def test_live_turn_uses_async_groq_and_json_mode(self):
+        service = self.make_service('{"response":"Vanakkam","intent":"continue"}')
+        result = await service.get_conversation_response("வணக்கம்", "CA-test", "Reply in Tamil")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["response"], "Vanakkam")
+        self.assertEqual(service.captured_messages[-1]["role"], "user")
+        self.assertEqual(service.captured_kwargs["response_format"], {"type": "json_object"})
+        self.assertEqual(service.captured_kwargs["reasoning_effort"], "low")
 
 
 if __name__ == "__main__":
