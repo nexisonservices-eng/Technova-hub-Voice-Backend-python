@@ -103,6 +103,43 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.captured_messages[-1]["role"], "user")
         self.assertEqual(service.captured_kwargs["response_format"], {"type": "json_object"})
         self.assertEqual(service.captured_kwargs["reasoning_effort"], "low")
+        self.assertFalse(service.captured_kwargs["include_reasoning"])
+        self.assertGreaterEqual(service.captured_kwargs["max_tokens"], 512)
+
+    async def test_exact_technovahub_tamil_tanglish_example_and_follow_up(self):
+        import json
+
+        knowledge = "TechnovaHub offers IT Services, AI Automation, and Digital Transformation Solutions."
+        first_answer = "TechnovaHub நிறுவனம் IT Services, AI Automation, மற்றும் Digital Transformation Solutions வழங்குகிறது. உங்களுக்கு எந்த service பற்றி தெரிந்துகொள்ள வேண்டும்?"
+        second_answer = "AI Automation மூலம் மீண்டும் மீண்டும் செய்யும் வேலைகளை தானியக்கமாக்கி, நேரத்தையும் செலவையும் குறைக்கலாம்."
+        responses = [
+            '{"response":' + json.dumps(first_answer, ensure_ascii=False) + ',"intent":"continue"}',
+            '{"response":' + json.dumps(second_answer, ensure_ascii=False) + ',"intent":"continue"}',
+        ]
+        service = self.make_service()
+
+        async def create_turn(**kwargs):
+            service.captured_kwargs = kwargs
+            service.captured_messages = kwargs["messages"]
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=responses.pop(0)))],
+                usage=SimpleNamespace(total_tokens=45),
+            )
+
+        service.async_client.chat.completions.create = create_turn
+        prompt = f"Reply in Tamil. Business information: {knowledge}"
+        first = await service.get_conversation_response(
+            "Hello, TechnovaHub என்னென்ன services provide பண்றீங்க?", "CA-example", prompt, {"locale": "ta-IN"}
+        )
+        self.assertEqual(first["response"], first_answer)
+        self.assertIn(knowledge, service.captured_messages[0]["content"])
+
+        second = await service.get_conversation_response(
+            "AI Automation பற்றி சொல்லுங்க", "CA-example", prompt, {"locale": "ta-IN"}
+        )
+        self.assertEqual(second["response"], second_answer)
+        self.assertEqual(len(service.conversation_history["CA-example"]), 4)
+        self.assertIn("Caller said: AI Automation பற்றி சொல்லுங்க", service.captured_messages[-1]["content"])
 
 
 if __name__ == "__main__":

@@ -113,10 +113,15 @@ Avoid long paragraphs or technical jargon unless asked."""
                 model=settings.AI_MODEL,
                 messages=messages,
                 temperature=settings.AI_TEMPERATURE,
-                max_tokens=settings.AI_MAX_TOKENS,
+                # GPT-OSS spends part of its completion budget on reasoning.
+                # The former 150-token default could truncate the JSON before
+                # the customer-facing response, causing JSONDecodeError and the
+                # spoken fallback. Keep enough budget for reasoning + JSON.
+                max_tokens=max(int(settings.AI_MAX_TOKENS), 512),
                 top_p=1,
                 stream=False,
                 reasoning_effort="low",
+                include_reasoning=False,
                 response_format={"type": "json_object"}
             )
             parsed = json.loads(result.choices[0].message.content or "{}")

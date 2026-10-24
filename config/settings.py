@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     AI_PROVIDER: str = "groq"
     AI_MODEL: str = "openai/gpt-oss-20b"
-    AI_MAX_TOKENS: int = 150
+    AI_MAX_TOKENS: int = 512
     AI_TEMPERATURE: float = 0.7
     AI_TIMEOUT: int = 30
 
