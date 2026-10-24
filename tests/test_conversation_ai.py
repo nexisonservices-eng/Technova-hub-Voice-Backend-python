@@ -121,6 +121,29 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("secret-value", result["error"])
         self.assertNotIn("caller text", result["error"])
 
+    async def test_groq_400_logs_safe_provider_message_and_invalid_parameter(self):
+        class FakeBadRequestError(Exception):
+            status_code = 400
+            code = None
+            body = {"error": {
+                "message": "Unsupported parameter max_tokens for model; key=gsk_secret; prompt=What services does TechnovaHub provide?",
+                "type": "invalid_request_error", "code": None, "param": "max_tokens"
+            }}
+            response = SimpleNamespace(headers={"x-request-id": "req-safe-400"})
+
+        customer_text = "What services does TechnovaHub provide?"
+        service = self.make_service(error=FakeBadRequestError("unsafe raw exception"))
+        result = await service.get_conversation_response(customer_text, "CA-test", "Use configured company knowledge")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_status"], 400)
+        self.assertEqual(result["error_param"], "max_tokens")
+        self.assertEqual(result["request_id"], "req-safe-400")
+        self.assertIn("Unsupported parameter max_tokens", result["provider_message"])
+        self.assertIn("[GROQ_KEY_REDACTED]", result["provider_message"])
+        self.assertIn("[customer text redacted]", result["provider_message"])
+        self.assertNotIn("gsk_secret", result["provider_message"])
+        self.assertNotIn(customer_text, result["provider_message"])
+
     async def test_technovahub_english_expected_answer_is_returned_in_api_schema(self):
         answer = "TechnovaHub provides IT Services, AI Automation, and Digital Transformation Solutions."
         service = self.make_service('{"response":"' + answer + '","intent":"continue"}')
@@ -146,7 +169,8 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.captured_kwargs["response_format"], {"type": "json_object"})
         self.assertEqual(service.captured_kwargs["reasoning_effort"], "low")
         self.assertFalse(service.captured_kwargs["include_reasoning"])
-        self.assertGreaterEqual(service.captured_kwargs["max_tokens"], 512)
+        self.assertGreaterEqual(service.captured_kwargs["max_completion_tokens"], 512)
+        self.assertNotIn("max_tokens", service.captured_kwargs)
 
     async def test_exact_technovahub_tamil_tanglish_example_and_follow_up(self):
         import json

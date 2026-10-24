@@ -381,7 +381,10 @@ async def conversation_turn(data: dict, request: Request):
             extra={"correlation_id": correlation_id, "call_id": call_id,
                    "error_type": result.get("error_type", "AIProviderError"),
                    "provider_status": result.get("error_status"),
-                   "provider_code": result.get("error_code"), "stage": "groq_response"},
+                   "provider_code": result.get("error_code"),
+                   "provider_param": result.get("error_param"),
+                   "provider_message": result.get("provider_message"),
+                   "stage": "groq_response"},
         )
         raise HTTPException(status_code=503, detail="Conversational AI could not generate a response")
     logger.info(

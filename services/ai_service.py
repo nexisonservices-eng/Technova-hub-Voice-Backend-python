@@ -3,6 +3,7 @@ Production AI Service using the Groq chat completions API
 """
 import time
 import json
+import re
 from typing import List, Dict, Optional
 from groq import AsyncGroq, Groq
 from config.settings import settings
@@ -23,18 +24,37 @@ def resolve_groq_model_id(model_id: str) -> str:
     return MODEL_MIGRATIONS.get(configured, configured)
 
 
-def _provider_error_metadata(error):
+def _sanitize_provider_message(message, customer_text=""):
+    """Keep useful provider diagnostics while removing credentials and caller data."""
+    safe = str(message or "")
+    if customer_text:
+        safe = safe.replace(str(customer_text), "[customer text redacted]")
+    safe = re.sub(r"(?i)Bearer\s+[A-Za-z0-9._~+/-]+=*", "Bearer [REDACTED]", safe)
+    safe = re.sub(r"\bgsk_[A-Za-z0-9_-]+", "[GROQ_KEY_REDACTED]", safe)
+    safe = re.sub(
+        r"(?i)(api[_-]?key|authorization)(\s*[=:]\s*)([^,;\s}\]]+)",
+        r"\1\2[REDACTED]", safe
+    )
+    safe = re.sub(r"\bCA[a-fA-F0-9]{32}\b", "[CALL_SID_REDACTED]", safe)
+    safe = re.sub(r"\b\+?[0-9][0-9 .()/-]{7,}[0-9]\b", "[PHONE_REDACTED]", safe)
+    return safe[:600]
+
+
+def _provider_error_metadata(error, customer_text=""):
     """Extract safe provider diagnostics without logging request content or credentials."""
     body = getattr(error, "body", None)
     details = body.get("error", body) if isinstance(body, dict) else {}
     details = details if isinstance(details, dict) else {}
     response = getattr(error, "response", None)
     headers = getattr(response, "headers", {}) or {}
+    provider_message = details.get("message") or "Provider response did not include an error message"
     return {
         "error_type": type(error).__name__,
         "status": getattr(error, "status_code", None),
         "code": str(details.get("code") or getattr(error, "code", "") or "")[:80] or None,
         "provider_type": str(details.get("type") or "")[:80] or None,
+        "param": str(details.get("param") or getattr(error, "param", "") or "")[:100] or None,
+        "message": _sanitize_provider_message(provider_message, customer_text),
         "request_id": str(headers.get("x-request-id") or headers.get("request-id") or "")[:100] or None,
     }
 
@@ -120,7 +140,7 @@ Avoid long paragraphs or technical jargon unless asked."""
             }
 
         except Exception as e:
-            provider = _provider_error_metadata(e)
+            provider = _provider_error_metadata(e, user_message)
             logger.error("AI request failed", extra={
                 "call_id": call_id, "stage": "groq_response", **provider
             })
@@ -132,6 +152,8 @@ Avoid long paragraphs or technical jargon unless asked."""
                 "error_status": provider["status"],
                 "error_code": provider["code"],
                 "provider_type": provider["provider_type"],
+                "error_param": provider["param"],
+                "provider_message": provider["message"],
                 "request_id": provider["request_id"],
                 "duration": time.time() - start_time
             }
@@ -157,12 +179,9 @@ Avoid long paragraphs or technical jargon unless asked."""
                 model=self.active_model,
                 messages=messages,
                 temperature=settings.AI_TEMPERATURE,
-                # GPT-OSS spends part of its completion budget on reasoning.
-                # The former 150-token default could truncate the JSON before
-                # the customer-facing response, causing JSONDecodeError and the
-                # spoken fallback. Keep enough budget for reasoning + JSON.
-                max_tokens=max(int(settings.AI_MAX_TOKENS), 512),
-                top_p=1,
+                # Groq now documents max_completion_tokens; max_tokens is
+                # deprecated. GPT-OSS also spends completion tokens on reasoning.
+                max_completion_tokens=max(int(settings.AI_MAX_TOKENS), 512),
                 stream=False,
                 reasoning_effort="low",
                 include_reasoning=False,
@@ -188,12 +207,14 @@ Avoid long paragraphs or technical jargon unless asked."""
                 "tokens_used": getattr(getattr(result, "usage", None), "total_tokens", 0)
             }
         except Exception as e:
-            provider = _provider_error_metadata(e)
+            provider = _provider_error_metadata(e, user_message)
             logger.error("Conversational AI turn failed", extra={
                 "call_id": call_id, "stage": "groq_response",
                 "provider_status": provider["status"],
                 "provider_code": provider["code"],
                 "provider_type": provider["provider_type"],
+                "provider_param": provider["param"],
+                "provider_message": provider["message"],
                 "request_id": provider["request_id"],
                 "error_type": provider["error_type"],
             })
@@ -206,6 +227,8 @@ Avoid long paragraphs or technical jargon unless asked."""
                 "error_status": provider["status"],
                 "error_code": provider["code"],
                 "provider_type": provider["provider_type"],
+                "error_param": provider["param"],
+                "provider_message": provider["message"],
                 "request_id": provider["request_id"],
                 "duration": time.time() - start_time
             }
