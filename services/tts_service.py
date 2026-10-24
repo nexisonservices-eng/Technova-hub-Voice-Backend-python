@@ -59,7 +59,7 @@ class TTSService:
                 rate = rate or self.rate
                 volume = volume or self.volume
                 
-                logger.info(f"Converting text to speech (Edge TTS): {text[:50]}...")
+                logger.info("Converting text to speech", extra={"provider": "edge_tts", "voice": voice})
                 
                 # Create communicate object
                 communicate = edge_tts.Communicate(
@@ -76,7 +76,9 @@ class TTSService:
                         audio_data += chunk["data"]
                 
                 duration = time.time() - start_time
-                
+                if not audio_data:
+                    raise RuntimeError("Edge TTS returned empty audio")
+
                 # Reset failure count on success
                 self.edge_tts_failures = 0
                 
@@ -95,10 +97,10 @@ class TTSService:
                 self.edge_tts_failures += 1
                 
                 if "403" in error_msg:
-                    logger.error(f"❌ Edge TTS 403 Forbidden: {error_msg}")
+                    logger.error("Edge TTS request failed", extra={"provider": "edge_tts", "voice": voice, "error": error_msg})
                     logger.warning(f"Edge TTS failures: {self.edge_tts_failures}/{self.max_failures}")
                 else:
-                    logger.error(f"Edge TTS Error: {error_msg}")
+                    logger.error("Edge TTS request failed", extra={"provider": "edge_tts", "voice": voice, "error": error_msg})
                 
                 # Disable Edge TTS if too many failures
                 if self.edge_tts_failures >= self.max_failures:
