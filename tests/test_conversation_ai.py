@@ -44,10 +44,10 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
         service = AIService.__new__(AIService)
 
         def create(**kwargs):
-            if error:
-                raise error
             service.captured_kwargs = kwargs
             service.captured_messages = kwargs["messages"]
+            if error:
+                raise error
             return SimpleNamespace(
                 choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
                 usage=SimpleNamespace(total_tokens=12),
@@ -78,7 +78,42 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
     async def test_intent_is_limited_to_supported_values(self):
         service = self.make_service('{"response":"Hello","intent":"unknown-intent"}')
         result = await service.get_conversation_response("Hello", "CA-test", "Reply in English")
-        self.assertEqual(result["intent"], "clarify")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_type"], "ValueError")
+
+    async def test_exact_groq_json_mode_400_is_prevented_by_explicit_system_instruction(self):
+        class FakeBadRequestError(Exception):
+            status_code = 400
+            code = None
+            body = {"error": {
+                "message": "'messages' must contain the word 'json' in some form, to use 'response_format' of type 'json_object'.",
+                "type": "invalid_request_error", "param": "messages", "code": None
+            }}
+            response = SimpleNamespace(headers={"x-request-id": "req-json-mode"})
+
+        service = self.make_service()
+
+        async def groq_json_mode_guard(**kwargs):
+            service.captured_kwargs = kwargs
+            service.captured_messages = kwargs["messages"]
+            if not any("json" in str(message.get("content", "")).lower() for message in kwargs["messages"]):
+                raise FakeBadRequestError("Groq rejected JSON mode")
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content='{"response":"TechnovaHub provides IT Services, AI Automation, and Digital Transformation Solutions.","intent":"continue"}'))],
+                usage=SimpleNamespace(total_tokens=20),
+            )
+
+        service.async_client.chat.completions.create = groq_json_mode_guard
+        result = await service.get_conversation_response(
+            "What services does TechnovaHub provide?", "CA-json", "Use company facts only"
+        )
+        system_message = service.captured_messages[0]["content"]
+        self.assertIn("json", system_message.lower())
+        self.assertIn('"response"', system_message)
+        self.assertIn('"intent"', system_message)
+        self.assertEqual(service.captured_kwargs["response_format"], {"type": "json_object"})
+        self.assertTrue(result["success"])
+        self.assertEqual(result["response"], "TechnovaHub provides IT Services, AI Automation, and Digital Transformation Solutions.")
 
     async def test_configured_discount_question_is_spoken_and_saved_to_history(self):
         question = "Would you like to hear about our current offer?"

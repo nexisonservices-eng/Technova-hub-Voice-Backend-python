@@ -11,6 +11,15 @@ from utils.logger import setup_logger
 from utils.exceptions import AIException
 
 logger = setup_logger(__name__)
+CONVERSATION_INTENTS = {
+    "continue", "offer_discounts", "discount_yes", "discount_no",
+    "human_transfer", "end_call", "clarify",
+}
+
+CONVERSATION_JSON_INSTRUCTION = """Return a valid json object only. Do not include Markdown.
+Required schema: {"response":"nonempty spoken reply in the configured language","intent":"continue"}.
+The response field must be a nonempty string. The intent field must be one of continue, offer_discounts, discount_yes, discount_no, human_transfer, end_call, clarify.
+Use intent for the existing transfer and completion behavior. Do not add transfer_required or end_call booleans."""
 
 MODEL_MIGRATIONS = {
     # Groq retired this model for standard production use on 2026-08-16.
@@ -171,7 +180,7 @@ Avoid long paragraphs or technical jargon unless asked."""
             history = self.conversation_history.get(call_id, [])[-10:]
             state_text = json.dumps(conversation_state or {}, ensure_ascii=False)
             messages = [
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": f"{system_prompt.strip()}\n\n{CONVERSATION_JSON_INSTRUCTION}"},
                 *history,
                 {"role": "user", "content": f"Conversation state: {state_text}\nCaller said: {user_message}"}
             ]
@@ -187,12 +196,17 @@ Avoid long paragraphs or technical jargon unless asked."""
                 include_reasoning=False,
                 response_format={"type": "json_object"}
             )
-            parsed = json.loads(result.choices[0].message.content or "{}")
-            answer = str(parsed.get("response") or "I'm sorry, I didn't catch that. Could you say that another way?").strip()
-            intent = str(parsed.get("intent") or "clarify").strip().lower()
-            allowed_intents = {"continue", "offer_discounts", "discount_yes", "discount_no", "human_transfer", "end_call", "clarify"}
-            if intent not in allowed_intents:
-                intent = "clarify"
+            parsed = json.loads(result.choices[0].message.content or "")
+            if not isinstance(parsed, dict):
+                raise ValueError("Conversation response must be a JSON object")
+            answer = parsed.get("response")
+            intent = parsed.get("intent")
+            if not isinstance(answer, str) or not answer.strip():
+                raise ValueError("Conversation response requires a nonempty response string")
+            if not isinstance(intent, str) or intent.strip().lower() not in CONVERSATION_INTENTS:
+                raise ValueError("Conversation response contains an unsupported intent")
+            answer = answer.strip()
+            intent = intent.strip().lower()
             if intent == "offer_discounts" and not (conversation_state or {}).get("discountAsked"):
                 configured_question = str((conversation_state or {}).get("discountQuestion") or "").strip()
                 if configured_question:
@@ -209,7 +223,8 @@ Avoid long paragraphs or technical jargon unless asked."""
         except Exception as e:
             provider = _provider_error_metadata(e, user_message)
             logger.error("Conversational AI turn failed", extra={
-                "call_id": call_id, "stage": "groq_response",
+                "call_id": call_id,
+                "stage": "groq_response" if provider["status"] is not None else "response_validation",
                 "provider_status": provider["status"],
                 "provider_code": provider["code"],
                 "provider_type": provider["provider_type"],
