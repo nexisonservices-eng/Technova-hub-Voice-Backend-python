@@ -21,6 +21,29 @@ Required schema: {"response":"nonempty spoken reply in the configured language",
 The response field must be a nonempty string. The intent field must be one of continue, offer_discounts, discount_yes, discount_no, human_transfer, end_call, clarify.
 Use intent for the existing transfer and completion behavior. Do not add transfer_required or end_call booleans."""
 
+AI_AUTOMATION_ANSWER = "எங்களோட AI Automation சர்வீசஸ்க்கு சில ஸ்பெஷல் ஆஃபர்ஸ் இருக்கு. அதைப் பத்தி இன்னும் டீடெயிலா தெரிஞ்சிக்க, உங்களை எங்க டீம் கூட கனெக்ட் பண்ணட்டுமா?"
+AI_AUTOMATION_YES = "சரி! ஒரு நிமிஷம் வெயிட் பண்ணுங்க. உங்களை எங்க டீம் கூட கனெக்ட் பண்றேன்."
+AI_AUTOMATION_NO = "சரி, பரவாயில்லை. வேற ஏதாவது தெரிஞ்சிக்கணுமா?"
+AI_AUTOMATION_ASKED = "AI Automation"  # also stored in conversation history to scope confirmation handling
+
+
+def _is_ai_automation_question(text):
+    normalized = re.sub(r"[^\w\s]", " ", str(text or "").lower())
+    has_topic = "automation" in normalized or "ஆட்டோமேஷன்" in normalized or "ஆட்டோமேஷன்" in str(text or "")
+    asks_about = any(term in normalized for term in ("what", "tell me", "about", "na enna", "pathi", "enna pannum", "services"))
+    has_tamil_question = any(term in str(text or "") for term in ("என்ன", "பத்தி", "சொல்லுங்க", "செய்யும்"))
+    return has_topic and (asks_about or has_tamil_question or "ai automation" in normalized)
+
+
+def _confirmation(text):
+    normalized = re.sub(r"[^\w\s]", " ", str(text or "").lower()).strip()
+    words = set(normalized.split())
+    yes = bool(words & {"yes", "yeah", "yep", "yup", "sure", "okay", "ok", "aama", "aamam", "sari", "வேண்டும்", "ஆமா", "ஆமாம்", "சரி"})
+    no = bool(words & {"no", "nope", "illa", "vendam", "வேண்டாம்", "இல்லை"})
+    if yes != no:
+        return "yes" if yes else "no"
+    return None
+
 MODEL_MIGRATIONS = {
     # Groq retired this model for standard production use on 2026-08-16.
     # Keep old Render environment overrides from continuing to send 404s.
@@ -178,6 +201,22 @@ Avoid long paragraphs or technical jargon unless asked."""
         start_time = time.time()
         try:
             history = self.conversation_history.get(call_id, [])[-10:]
+            last_assistant = next((item.get("content", "") for item in reversed(history) if item.get("role") == "assistant"), "")
+            if last_assistant == AI_AUTOMATION_ANSWER:
+                confirmation = _confirmation(user_message)
+                if confirmation == "yes":
+                    answer, intent = AI_AUTOMATION_YES, "discount_yes"
+                elif confirmation == "no":
+                    answer, intent = AI_AUTOMATION_NO, "continue"
+                else:
+                    answer, intent = "ஆம்னா சொல்லுங்க, உங்களை எங்க டீம் கூட கனெக்ட் பண்றேன். இல்லன்னா வேற ஏதாவது கேளுங்க.", "continue"
+                self._update_history(call_id, user_message, answer)
+                return {"success": True, "response": answer, "intent": intent,
+                        "duration": time.time() - start_time, "tokens_used": 0}
+            if _is_ai_automation_question(user_message):
+                self._update_history(call_id, user_message, AI_AUTOMATION_ANSWER)
+                return {"success": True, "response": AI_AUTOMATION_ANSWER, "intent": "continue",
+                        "duration": time.time() - start_time, "tokens_used": 0}
             state_text = json.dumps(conversation_state or {}, ensure_ascii=False)
             messages = [
                 {"role": "system", "content": f"{system_prompt.strip()}\n\n{CONVERSATION_JSON_INSTRUCTION}"},

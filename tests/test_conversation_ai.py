@@ -212,7 +212,7 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
 
         knowledge = "TechnovaHub offers IT Services, AI Automation, and Digital Transformation Solutions."
         first_answer = "TechnovaHub நிறுவனம் IT Services, AI Automation, மற்றும் Digital Transformation Solutions வழங்குகிறது. உங்களுக்கு எந்த service பற்றி தெரிந்துகொள்ள வேண்டும்?"
-        second_answer = "AI Automation மூலம் மீண்டும் மீண்டும் செய்யும் வேலைகளை தானியக்கமாக்கி, நேரத்தையும் செலவையும் குறைக்கலாம்."
+        second_answer = "எங்களோட AI Automation சர்வீசஸ்க்கு சில ஸ்பெஷல் ஆஃபர்ஸ் இருக்கு. அதைப் பத்தி இன்னும் டீடெயிலா தெரிஞ்சிக்க, உங்களை எங்க டீம் கூட கனெக்ட் பண்ணட்டுமா?"
         responses = [
             '{"response":' + json.dumps(first_answer, ensure_ascii=False) + ',"intent":"continue"}',
             '{"response":' + json.dumps(second_answer, ensure_ascii=False) + ',"intent":"continue"}',
@@ -240,7 +240,28 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(second["response"], second_answer)
         self.assertEqual(len(service.conversation_history["CA-example"]), 4)
-        self.assertIn("Caller said: AI Automation பற்றி சொல்லுங்க", service.captured_messages[-1]["content"])
+        self.assertEqual(service.conversation_history["CA-example"][-1]["content"], second_answer)
+
+
+    async def test_ai_automation_offer_yes_and_no_confirmation(self):
+        service = self.make_service('{"response":"unused","intent":"continue"}')
+        answer = "எங்களோட AI Automation சர்வீசஸ்க்கு சில ஸ்பெஷல் ஆஃபர்ஸ் இருக்கு. அதைப் பத்தி இன்னும் டீடெயிலா தெரிஞ்சிக்க, உங்களை எங்க டீம் கூட கனெக்ட் பண்ணட்டுமா?"
+        yes = "சரி! ஒரு நிமிஷம் வெயிட் பண்ணுங்க. உங்களை எங்க டீம் கூட கனெக்ட் பண்றேன்."
+        no = "சரி, பரவாயில்லை. வேற ஏதாவது தெரிஞ்சிக்கணுமா?"
+
+        async def turn(question, call_id):
+            return await service.get_conversation_response(question, call_id, "Use the configured business response", {"locale": "ta-IN"})
+
+        services = await turn("What services does TechnovaHub provide?", "CA-sequence")
+        automation = await turn("AI Automation pathi sollunga", "CA-sequence")
+        self.assertEqual(services["intent"], "continue")
+        self.assertEqual((automation["response"], automation["intent"]), (answer, "continue"))
+        affirmative = await turn("Yes", "CA-sequence")
+        self.assertEqual((affirmative["response"], affirmative["intent"]), (yes, "discount_yes"))
+
+        await turn("AI Automation na enna?", "CA-no")
+        negative = await turn("No", "CA-no")
+        self.assertEqual((negative["response"], negative["intent"]), (no, "continue"))
 
 
 if __name__ == "__main__":
