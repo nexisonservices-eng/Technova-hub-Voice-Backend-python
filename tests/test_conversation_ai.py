@@ -212,7 +212,7 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
 
         knowledge = "TechnovaHub offers IT Services, AI Automation, and Digital Transformation Solutions."
         first_answer = "TechnovaHub நிறுவனம் IT Services, AI Automation, மற்றும் Digital Transformation Solutions வழங்குகிறது. உங்களுக்கு எந்த service பற்றி தெரிந்துகொள்ள வேண்டும்?"
-        second_answer = "எங்களோட AI Automation சர்வீசஸ்க்கு சில ஸ்பெஷல் ஆஃபர்ஸ் இருக்கு. அதைப் பத்தி இன்னும் டீடெயிலா தெரிஞ்சிக்க, உங்களை எங்க டீம் கூட கனெக்ட் பண்ணட்டுமா?"
+        second_answer = "எங்களோட AI ஆட்டோமேஷன் சர்வீசஸ் பத்தியும், அதுக்கான ஸ்பெஷல் ஆஃபர்ஸ் பத்தியும் எங்க டீம் கிட்ட டீடெயிலா தெரிஞ்சிக்கலாம். உங்களை எங்க டீம் கூட கனெக்ட் பண்ணட்டுமா?"
         responses = [
             '{"response":' + json.dumps(first_answer, ensure_ascii=False) + ',"intent":"continue"}',
             '{"response":' + json.dumps(second_answer, ensure_ascii=False) + ',"intent":"continue"}',
@@ -245,7 +245,7 @@ class ConversationAITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ai_automation_offer_yes_and_no_confirmation(self):
         service = self.make_service('{"response":"unused","intent":"continue"}')
-        answer = "எங்களோட AI Automation சர்வீசஸ்க்கு சில ஸ்பெஷல் ஆஃபர்ஸ் இருக்கு. அதைப் பத்தி இன்னும் டீடெயிலா தெரிஞ்சிக்க, உங்களை எங்க டீம் கூட கனெக்ட் பண்ணட்டுமா?"
+        answer = "எங்களோட AI ஆட்டோமேஷன் சர்வீசஸ் பத்தியும், அதுக்கான ஸ்பெஷல் ஆஃபர்ஸ் பத்தியும் எங்க டீம் கிட்ட டீடெயிலா தெரிஞ்சிக்கலாம். உங்களை எங்க டீம் கூட கனெக்ட் பண்ணட்டுமா?"
         yes = "சரி! ஒரு நிமிஷம் வெயிட் பண்ணுங்க. உங்களை எங்க டீம் கூட கனெக்ட் பண்றேன்."
         no = "சரி, பரவாயில்லை. வேற ஏதாவது தெரிஞ்சிக்கணுமா?"
 

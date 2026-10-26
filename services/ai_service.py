@@ -21,12 +21,9 @@ Required schema: {"response":"nonempty spoken reply in the configured language",
 The response field must be a nonempty string. The intent field must be one of continue, offer_discounts, discount_yes, discount_no, human_transfer, end_call, clarify.
 Use intent for the existing transfer and completion behavior. Do not add transfer_required or end_call booleans."""
 
-AI_AUTOMATION_ANSWER = "எங்களோட AI Automation சர்வீசஸ்க்கு சில ஸ்பெஷல் ஆஃபர்ஸ் இருக்கு. அதைப் பத்தி இன்னும் டீடெயிலா தெரிஞ்சிக்க, உங்களை எங்க டீம் கூட கனெக்ட் பண்ணட்டுமா?"
+AI_AUTOMATION_ANSWER = "எங்களோட AI ஆட்டோமேஷன் சர்வீசஸ் பத்தியும், அதுக்கான ஸ்பெஷல் ஆஃபர்ஸ் பத்தியும் எங்க டீம் கிட்ட டீடெயிலா தெரிஞ்சிக்கலாம். உங்களை எங்க டீம் கூட கனெக்ட் பண்ணட்டுமா?"
 AI_AUTOMATION_YES = "சரி! ஒரு நிமிஷம் வெயிட் பண்ணுங்க. உங்களை எங்க டீம் கூட கனெக்ட் பண்றேன்."
 AI_AUTOMATION_NO = "சரி, பரவாயில்லை. வேற ஏதாவது தெரிஞ்சிக்கணுமா?"
-AI_AUTOMATION_ASKED = "AI Automation"  # also stored in conversation history to scope confirmation handling
-
-
 def _is_ai_automation_question(text):
     normalized = re.sub(r"[^\w\s]", " ", str(text or "").lower())
     has_topic = "automation" in normalized or "ஆட்டோமேஷன்" in normalized or "ஆட்டோமேஷன்" in str(text or "")
