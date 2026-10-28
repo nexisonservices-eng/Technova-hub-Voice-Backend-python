@@ -2,14 +2,15 @@
 Voice Broadcast TTS Endpoint
 High-performance batch TTS generation for broadcast campaigns
 """
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, validator
 from typing import Optional
 import edge_tts
 import asyncio
 import logging
 import re
+import uuid
 from googletrans import Translator
 from config.voice_config import (
     ALLOWED_VOICES, 
@@ -87,7 +88,7 @@ class BroadcastTTSRequest(BaseModel):
 
 
 @router.post("/broadcast")
-async def generate_broadcast_tts(request: BroadcastTTSRequest):
+async def generate_broadcast_tts(request: BroadcastTTSRequest, http_request: Request):
     """
     Generate TTS audio for voice broadcast
     Returns raw audio bytes (MP3 format)
@@ -97,16 +98,18 @@ async def generate_broadcast_tts(request: BroadcastTTSRequest):
     - No AI reasoning
     - Direct TTS generation only
     """
+    request_id = (http_request.headers.get("X-Request-ID") or http_request.headers.get("X-Correlation-ID") or str(uuid.uuid4()))[:100]
+    language = request.language
+    voice = request.voice
     try:
         # Tamil text must be spoken by a Tamil voice even when a client sends
         # its default English voice/language settings.
         contains_tamil = bool(_TAMIL_SCRIPT.search(request.text))
         language = "ta-IN" if contains_tamil else request.language
-        voice = request.voice
         if contains_tamil and not voice.startswith("ta-IN-"):
             voice = "ta-IN-PallaviNeural"
 
-        logger.info("Generating TTS", extra={"language": language, "voice": voice, "provider": request.provider})
+        logger.info("Generating TTS", extra={"request_id": request_id, "language": language, "voice": voice, "provider": request.provider})
         speech_text = await translate_for_tamil_tts(request.text, language)
 
         if request.provider == "edge":
@@ -133,14 +136,18 @@ async def generate_broadcast_tts(request: BroadcastTTSRequest):
             headers={
                 "Content-Disposition": "attachment; filename=broadcast.mp3",
                 "Cache-Control": "public, max-age=31536000"  # Cache for 1 year
+                ,"X-Request-ID": request_id
             }
         )
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("TTS generation failed", extra={"language": request.language, "voice": request.voice, "provider": request.provider, "error": str(e)})
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException as exc:
+        status_code = exc.status_code
+        message = exc.detail if status_code < 500 and isinstance(exc.detail, str) else "TTS provider failed to generate audio"
+        logger.exception("TTS request failed", extra={"request_id": request_id, "language": language, "voice": voice, "exception_type": type(exc).__name__, "provider": request.provider})
+        return JSONResponse(status_code=status_code, content={"success": False, "error": {"code": "tts_request_failed", "message": message, "request_id": request_id}}, headers={"X-Request-ID": request_id})
+    except Exception as exc:
+        logger.exception("TTS generation failed", extra={"request_id": request_id, "language": language, "voice": voice, "exception_type": type(exc).__name__, "provider": request.provider})
+        return JSONResponse(status_code=502, content={"success": False, "error": {"code": "tts_provider_failed", "message": "TTS provider failed to generate audio", "request_id": request_id}}, headers={"X-Request-ID": request_id})
 
 
 async def generate_edge_tts(
@@ -175,8 +182,8 @@ async def generate_edge_tts(
                 status_code=503,
                 detail="Edge TTS service is currently unavailable (403 Forbidden). A library update on the server is required."
             )
-        logger.error(f"Edge TTS error: {error_msg}")
-        raise HTTPException(status_code=500, detail=error_msg)
+        logger.exception("Edge TTS provider failed", extra={"exception_type": type(e).__name__})
+        raise HTTPException(status_code=502, detail="TTS provider failed to generate audio") from e
 
 
 @router.get("/voices")
