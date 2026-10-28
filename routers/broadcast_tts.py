@@ -29,7 +29,7 @@ _translation_cache = {}
 _TAMIL_SCRIPT = re.compile(r"[\u0B80-\u0BFF]")
 
 
-async def translate_for_tamil_tts(text: str, language: str) -> str:
+async def translate_for_tamil_tts(text: str, language: str, request_id: str = "") -> str:
     """Translate non-Tamil prompts before Tamil TTS; pass Tamil text through."""
     if language != "ta-IN" or not text.strip() or _TAMIL_SCRIPT.search(text):
         return text
@@ -50,11 +50,15 @@ async def translate_for_tamil_tts(text: str, language: str) -> str:
         _translation_cache[text] = translated
         return translated
     except Exception as exc:
-        logger.exception("Tamil translation failed")
-        raise HTTPException(
-            status_code=502,
-            detail="Tamil translation failed; no audio was generated. Please retry."
-        ) from exc
+        # Translation is an optional enhancement for English prompts. Keep the
+        # selected Tamil voice usable during translator outages; the TTS call
+        # below remains responsible for deciding whether audio was generated.
+        logger.exception(
+            "Tamil translation failed; continuing with original text",
+            extra={"request_id": request_id, "language": language,
+                   "voice": "ta-IN", "exception_type": type(exc).__name__},
+        )
+        return text
 
 
 class BroadcastTTSRequest(BaseModel):
@@ -110,7 +114,7 @@ async def generate_broadcast_tts(request: BroadcastTTSRequest, http_request: Req
             voice = "ta-IN-PallaviNeural"
 
         logger.info("Generating TTS", extra={"request_id": request_id, "language": language, "voice": voice, "provider": request.provider})
-        speech_text = await translate_for_tamil_tts(request.text, language)
+        speech_text = await translate_for_tamil_tts(request.text, language, request_id)
 
         if request.provider == "edge":
             audio_data = await generate_edge_tts(

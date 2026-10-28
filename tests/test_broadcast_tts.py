@@ -46,6 +46,11 @@ class BroadcastTTSTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.body, b'{"success":false,"error":{"code":"tts_request_failed","message":"TTS provider failed to generate audio","request_id":"req-fail"}}')
 
+    async def test_translation_outage_does_not_block_tamil_voice_audio_generation(self):
+        with patch.object(broadcast_tts, "Translator", side_effect=RuntimeError("translation unavailable")):
+            result = await broadcast_tts.translate_for_tamil_tts("Your appointment is confirmed", "ta-IN", "req-translate")
+        self.assertEqual(result, "Your appointment is confirmed")
+
 
 if __name__ == "__main__":
     unittest.main()
